@@ -1,0 +1,431 @@
+---
+title: "第一单元函数调用接口"
+author: "柴王珩 2023201563"
+date: "2025-11-16"
+output: html_document
+---
+
+#拟合经验分布函数的方法(ecdf)
+```{r}
+x <- rnorm(50)
+n<-length(x)
+# 拟合经验分布
+Fhat <- ecdf(x)
+
+#给出置信带
+alpha<-0.05
+eps<-sqrt((1/(2*n))*log(2/alpha))
+
+#得到对应的函数的取值
+xx<-sort(x)
+Fhat_xx<-Fhat(xx)
+
+#逐元素取值，确保取得0到1范围内的值
+lower <- pmax(Fhat_xx-eps,0)
+upper <- pmin(Fhat_xx+eps,1)
+
+#绘图
+plot(Fhat,main="经验分布函数的DKW置信带")
+lines(xx, lower, col="red", lty=2)
+lines(xx, upper, col="red", lty=2)
+```
+
+#计算统计量后执行检验的检验模板
+```{r}
+#计算出的统计量
+T_value<-3
+
+param1<-NULL
+param2<-NULL
+
+alternative<-"two.sided"
+
+if(alternative == "greater"){
+  p_value <- 1 - CDF(T_value, param1, param2)
+} else if(alternative == "less"){
+  p_value <- CDF(T_value, param1, param2)
+} else {
+  p_value <- 2 * min(
+    CDF(T_value, param1, param2),
+    1 - CDF(T_value, param1, param2)
+  )
+}
+
+p_value
+```
+
+#常见分布的cdf
+```{r}
+#正态分布pnorm(x, mean, sd)
+#t分布pt(x, df)
+#卡方分布pchisq(x, df)
+#F分布pf(x, df1, df2)
+#伯努利分布pbinom(x, size, prob)
+#泊松分布ppois(x, lambda)
+#gamma分布pgamma(x,shape=k,rate=lambda) #scale=1/rate  默认是rate，也就是gamma的东西
+#beta分布 pbeta(x,shape1,shape2)
+```
+
+#常见分布的pdf
+```{r}
+# 正态分布密度函数 dnorm(x, mean, sd)
+dnorm(0, mean = 0, sd = 1)  # 标准正态分布在0处的密度值
+
+# t分布密度函数 dt(x, df)
+dt(0, df = 10)  # 自由度为10的t分布在0处的密度值
+
+# 卡方分布密度函数 dchisq(x, df)
+dchisq(1, df = 5)  # 自由度为5的卡方分布在1处的密度值
+
+# F分布密度函数 df(x, df1, df2)
+df(1, df1 = 5, df2 = 10)  # 分子自由度5，分母自由度10的F分布在1处的密度值
+
+# 二项分布密度函数 dbinom(x, size, prob)
+dbinom(3, size = 10, prob = 0.5)  # n=10,p=0.5的二项分布在3处的概率质量
+
+# 泊松分布密度函数 dpois(x, lambda)
+dpois(2, lambda = 3)  # 参数λ=3的泊松分布在2处的概率质量
+
+# gamma分布密度函数 dgamma(x, shape, rate)
+dgamma(1, shape = 2, rate = 1)  # 形状参数=2，率参数=1的gamma分布在1处的密度值
+
+# beta分布密度函数 dbeta(x, shape1, shape2)
+dbeta(0.5, shape1 = 2, shape2 = 2)  # 形状参数均为2的beta分布在0.5处的密度值
+```
+
+#生成随机数据用于模拟
+```{r}
+data2 <- rexp(300, rate = 2)
+data3<-rnorm(300,0,1)
+```
+
+
+
+#以卡方检验为例给出调用示例
+```{r}
+T_value <- 12.3
+df <- 6
+
+alternative <- "greater"
+
+if(alternative == "greater"){
+  p_value <- 1 - pchisq(T_value, df)
+} else if(alternative == "less"){
+  p_value <- pchisq(T_value, df)
+} else {
+  p_value <- 2 * min( pchisq(T_value, df), 1 - pchisq(T_value, df) )
+}
+
+p_value
+```
+
+#比较多个经验分布函数实例
+```{r}
+# 生成三组数据
+set.seed(1)
+x1 <- rnorm(50, mean = 0)
+x2 <- rnorm(50, mean = 1)
+x3 <- rnorm(50, mean = 2)
+
+# 转成 ECDF 函数
+F1 <- ecdf(x1)
+F2 <- ecdf(x2)
+F3 <- ecdf(x3)
+
+# 先画第一条（建立坐标轴）
+plot(F1,
+     verticals = FALSE, do.points = FALSE,
+     col = "blue", lwd = 2,
+     main = "Multiple ECDFs",
+     xlab = "x", ylab = "F(x)")
+
+# 第二条，加到原图上
+plot(F2,
+     verticals = FALSE, do.points = FALSE,
+     col = "red", lwd = 2,
+     add = TRUE)
+
+# 第三条
+plot(F3,
+     verticals = FALSE, do.points = FALSE,
+     col = "darkgreen", lwd = 2,
+     add = TRUE)
+
+# 图例
+legend("bottomright",
+       legend = c("Group 1", "Group 2", "Group 3"),
+       col = c("blue", "red", "darkgreen"),
+       lwd = 2)
+```
+
+#寻找分位数示例
+```{r}
+x<-c(1,2,3,4,5,6,7,8)
+quantile(x,0.5)
+```
+
+#国庆作业1.12模拟练习
+
+##比较经验分布与理论分布的模板
+```{r}
+library(MASS)
+library(ggplot2)
+library(boot)
+library(mixtools)
+
+data(geyser)
+x <- geyser$duration
+n <- 20    # 每次抽样量（生成 mins 时用）
+B <- 50    # 重复次数（mins 的长度）
+mins<-NULL
+
+# 重现你生成 mins 的过程（如果已经有 mins 可跳过）
+for(k in 1:B){ mins<-c(mins,min(sample(x,n,replace = FALSE))) }
+
+# 经验 CDF
+F1 <- ecdf(mins)
+
+# 拟合正态参数（基于 mins）
+mean1 <- mean(mins)
+sd1   <- sd(mins)
+
+# DKW 置信带 (alpha)
+alpha <- 0.05
+n_obs <- length(mins)                # 构造 ECDF 的样本大小 = B
+eps   <- sqrt( (1/(2 * n_obs)) * log(2/alpha) )
+
+# 统一网格 xx，用于绘图与计算
+xx <- seq(min(mins), max(mins), length.out = 400)
+Fhat_xx <- F1(xx)
+
+# DKW 上下界并裁剪到 [0,1]
+lower <- pmax(Fhat_xx - eps, 0)
+upper <- pmin(Fhat_xx + eps, 1)
+
+# 理论 CDF（用拟合的正态分布）
+theo_cdf <- pnorm(xx, mean = mean1, sd = sd1)
+
+# 绘图：经验 CDF、置信带（阴影）与理论 CDF
+plot(xx, Fhat_xx, type = "s", lwd = 2,
+     main = "ECDF with DKW confidence band and Normal CDF",
+     xlab = "x", ylab = "F(x)", ylim = c(0,1))
+
+# 阴影置信带
+polygon(c(xx, rev(xx)), c(upper, rev(lower)),
+        col = rgb(0.8,0.8,0.8,0.5), border = NA)
+
+# 再画阶梯 ECDF（覆盖在阴影上）
+lines(xx, Fhat_xx, type = "s", lwd = 2)
+
+# 画理论 CDF
+lines(xx, theo_cdf, col = "red", lwd = 2)
+
+legend("bottomright",
+       legend = c("ECDF", "DKW band (95%)", "Fitted Normal CDF"),
+       col = c("black", rgb(0.8,0.8,0.8,0.5), "red"),
+       lwd = c(2, 10, 2), bty = "n", pt.cex = c(1,1,1))
+
+# 判断理论 CDF 是否完全在置信带内（逐点判断）
+inside <- (theo_cdf >= lower) & (theo_cdf <= upper)
+prop_inside <- mean(inside)   # 在网格点上落入置信带的比例
+n_out <- sum(!inside)
+
+cat("DKW eps =", signif(eps,4), "\n")
+cat("网格上理论 CDF 落入置信带的比例 =", signif(prop_inside,4), 
+    " (", n_out, " 网格点在外)\n", sep="")
+
+# 如果想查看哪些区间超出
+if(n_out > 0){
+  out_idx <- which(!inside)
+  cat("示例：第一个超出点 x =", xx[out_idx[1]],
+      "theo=", signif(theo_cdf[out_idx[1]],4),
+      "lower=", signif(lower[out_idx[1]],4),
+      "upper=", signif(upper[out_idx[1]],4), "\n")
+}
+
+```
+
+
+##最大似然拟合分布方法
+```{r}
+fit <- fitdistr(x, densfun = "分布名")
+
+fit$estimate      # 参数估计值
+fit$sd            # 参数标准误
+
+#常见分布的MLE调用方式
+fit <- fitdistr(x, "normal")
+fit$estimate
+fit <- fitdistr(x, "exponential")
+fit <- fitdistr(x, "gamma")
+fit$estimate   # 包含 shape 和 rate
+fit <- fitdistr(
+  x,
+  densfun = "beta",
+  start = list(shape1 = 1, shape2 = 1)
+)
+fit$estimate #remark 必须提供初值，否则无法收敛
+fit <- fitdistr(x, "lognormal")
+fit$estimate    # meanlog, sdlog
+#自定义的函数参数拟合
+my_pdf <- function(x, a, b) {
+  # 例如某个特殊分布
+  return( a * exp(-b*x) )
+}
+
+fit <- fitdistr(x, my_pdf, start=list(a=1,b=1))
+
+```
+
+
+##拟合混合分布的方法
+```{r}
+library("mixtools")
+fit <- gammamixEM(x, k=2)
+fit$lambda
+fit$alpha
+fit$beta
+
+#混合正态
+set.seed(1)
+x <- c(rnorm(200, 0, 1), rnorm(200, 5, 1.5))
+
+fit_normal <- normalmixEM(x, k = 2)
+
+fit_normal$lambda   # mixing proportions
+fit_normal$mu       # means
+fit_normal$sigma    # sds
+
+x <- c(rgamma(300, shape = 2, scale = 1),
+       rgamma(300, shape = 5, scale = 2))
+
+#混合gamma
+fit_gamma <- gammamixEM(x, k = 2)
+
+fit_gamma$lambda
+fit_gamma$alpha     # shape parameters
+fit_gamma$theta     #scale参数 不是rate!!!
+
+
+#混合beta
+fit_beta <- betamixEM(x, k = 2)
+
+fit_beta$lambda
+fit_beta$alpha      # alpha parameters
+fit_beta$beta       # beta parameters
+
+#混合weibull分布
+
+x <- c(rweibull(300, shape = 1.2, scale = 2),
+       rweibull(300, shape = 3, scale = 1))
+
+fit_weibull <- weibullmixEM(x, k = 2)
+
+fit_weibull$lambda
+fit_weibull$shape
+fit_weibull$scale
+
+
+```
+
+
+##拟合后比较并调用模板
+```{r}
+#拟合混合分布(分支分布)
+library("mixtools")
+#使用EM算法进行拟合
+mix_fit<-normalmixEM(x, k= 2, maxit=5000, epsilon= 1e-08)
+
+pi_hat<-mix_fit$lambda
+mu_hat<-mix_fit$mu
+sigma_hat<-mix_fit$sigma
+#混合分布的最小次序统计量分布函数
+F_mix<-function(y){
+  F_val<-pi_hat[1]*pnorm(y,mu_hat[1],sigma_hat[1])+
+    pi_hat[2]*pnorm(y,mu_hat[2],sigma_hat[2])
+  #混合分布的CDF用全概率公式给出
+  1-(1-F_val)^n#最小次序统计量的分布
+}
+F2<-ecdf(x)
+# 统一网格 xx，用于绘图与计算
+xx <- seq(min(mins), max(mins), length.out = 400)
+Fhat_xx <- F2(xx)
+
+# DKW 上下界并裁剪到 [0,1]
+lower <- pmax(Fhat_xx - eps, 0)
+upper <- pmin(Fhat_xx + eps, 1)
+
+theo_cdf<-F_mix(xx)
+
+# 绘图：经验 CDF、置信带（阴影）与理论 CDF
+plot(xx, Fhat_xx, type = "s", lwd = 2,
+     main = "ECDF with DKW confidence band and Normal CDF",
+     xlab = "x", ylab = "F(x)", ylim = c(0,1))
+
+# 阴影置信带
+polygon(c(xx, rev(xx)), c(upper, rev(lower)),
+        col = rgb(0.8,0.8,0.8,0.5), border = NA)
+
+# 再画阶梯 ECDF（覆盖在阴影上）
+lines(xx, Fhat_xx, type = "s", lwd = 2)
+
+# 画理论 CDF
+lines(xx, theo_cdf, col = "red", lwd = 2)
+
+legend("bottomright",
+       legend = c("ECDF", "DKW band (95%)", "Fitted Normal CDF"),
+       col = c("black", rgb(0.8,0.8,0.8,0.5), "red"),
+       lwd = c(2, 10, 2), bty = "n", pt.cex = c(1,1,1))
+
+# 判断理论 CDF 是否完全在置信带内（逐点判断）
+inside <- (theo_cdf >= lower) & (theo_cdf <= upper)
+prop_inside <- mean(inside)   # 在网格点上落入置信带的比例
+n_out <- sum(!inside)
+
+cat("DKW eps =", signif(eps,4), "\n")
+cat("网格上理论 CDF 落入置信带的比例 =", signif(prop_inside,4), 
+    " (", n_out, " 网格点在外)\n", sep="")
+
+# 如果想查看哪些区间超出
+if(n_out > 0){
+  out_idx <- which(!inside)
+  cat("示例：第一个超出点 x =", xx[out_idx[1]],
+      "theo=", signif(theo_cdf[out_idx[1]],4),
+      "lower=", signif(lower[out_idx[1]],4),
+      "upper=", signif(upper[out_idx[1]],4), "\n")
+}
+
+```
+
+#对数据绘制累积分布
+```{r}
+x<-c(1,2,3,4,5,6,7,8)
+# 数据的经验分布函数
+plot(ecdf(x),
+     main = "ECDF of Data",
+     xlab = "x",
+     ylab = "F(x)",
+     col = "blue",
+     lwd = 2)
+
+
+```
+#对数据绘制直方图
+
+```{r}
+x<-c(1,2,3,4,5,6,7,8)
+
+hist(x, breaks = 30,
+     probability = TRUE,   # 让直方图变成密度(频率变成频数)
+     col = "lightgray",
+     main = "Histogram with Mixture Density",
+     xlab = "x")
+
+```
+#对数据绘制QQ图的方法
+
+```{r}
+x<-c(1,2,3,4,5,6,7,8)
+qqnorm(x)
+qqline(x, col="red")
+```

@@ -1,0 +1,529 @@
+---
+title: "第五单元调用接口"
+author: "柴王珩 2023201563"
+date: "2025-11-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#普通卡方列联表的独立性检验
+
+```{r}
+blood<-matrix(c(98,38,289,67,41,262,13,8,57,18,12,30),nrow=4,byrow = TRUE)
+chisq.test(blood)
+```
+
+#卡方齐性检验
+如果概率相同，频数应该和理论期望接近，可以根据原假设推导理论期望，得到统计量与普通的列联表是一致的
+```{r}
+jane<-matrix(c(147,186,101,83,25,26,11,29,32,39,15,15,94,105,37,22,59,74,28,43,18,10,10,4),nrow=6,byrow=TRUE)
+chisq.test(jane)
+```
+
+#Fisher精确性检验
+
+有小于5的单元格，期望频数过少，会出警告信息
+```{r}
+medcine<-matrix(c(8,2,7,23),nrow=2,byrow=TRUE)
+fisher.test(medcine)
+```
+
+非2*2也可以由一个单元格确定，可以写出单元格与行和列和的矩阵方程，反解
+```{r}
+data<-matrix(c(1,1,0,1,8,0,0,1,1,1,0,1,1,0,0,0,7,1),nrow=3,byrow = TRUE)
+fisher.test(data)
+```
+
+
+#mantel-haenszel检验
+```{r}
+HA<-matrix(c(50,92,15,90),2)
+HB<-matrix(c(47,5,135,60),2)
+m<-c(HA,HB)
+x<-array(m,c(2,2,2))#创建三维数组，2行2列2层，刚好把HA，HB排成三维数组
+mantelhaen.test(x)
+```
+
+#Ridit检验法
+
+```{r}
+# 数据
+data <- data.frame(
+  总数=c(539,132,59,54,10,6),
+  基本痊愈=c(194,9,20,4,4,1),
+  显效=c(134,38,13,12,2,3),
+  有效=c(182,73,20,33,3,0),
+  无效=c(28,11,6,5,1,2),
+  恶化=c(1,0,0,0,0,0),
+  死亡=c(0,1,0,0,0,0)
+)
+rownames(data) <- c("A1","A2","A3","A4","A5","A6")
+
+ridit_test <- function(df){
+  # df：第一列为总数，其余为等级
+  
+  O_total <- sum(df$总数)      
+  O_levels <- colSums(df[,-1]) 
+  
+  # Ridit levels
+  H <- O_levels / 2
+  C <- c(0, cumsum(O_levels)[-length(O_levels)])
+  R_levels <- (H + C) / O_total
+  
+  # 各组 ridit
+  R_group <- numeric(nrow(df))
+  for(i in 1:nrow(df)){
+    obs <- as.numeric(df[i,-1])
+    R_group[i] <- sum(obs * R_levels) / df$总数[i]
+  }
+  
+  # 置信区间
+  se <- 1 / sqrt(3 * df$总数)
+  lower <- R_group - se
+  upper <- R_group + se
+  
+
+  # ---------------------------
+  # W = 12 * Σ O_i (R_i - 0.5)^2
+  Oi <- df$总数
+  W <- 12 * sum(Oi * (R_group - 0.5)^2)
+  
+  df_chi <- nrow(df) - 1
+  p_value <- 1 - pchisq(W, df_chi)
+  
+  result <- list(
+    scores = data.frame(
+      Ridit = R_group,
+      Lower = lower,
+      Upper = upper,
+      row.names = rownames(df)
+    ),
+    test = list(
+      statistic = W,
+      df = df_chi,
+      p_value = p_value,
+      formula = "W = 12 * Σ O_i (R_i - 0.5)^2",
+      method = "Ridit W-test (large sample)"
+    )
+  )
+  
+  return(result)
+}
+
+
+out <- ridit_test(data)
+out$scores
+out$test
+
+```
+
+示例调用，三组四等级数据
+```{r}
+test_data <- data.frame(
+  总数 = c(50, 30, 20),
+  等级1 = c(10, 5, 2),
+  等级2 = c(15, 10, 6),
+  等级3 = c(20, 10, 8),
+  等级4 = c(5, 5, 4)
+)
+rownames(test_data) <- c("G1", "G2", "G3")
+
+ridit_test(test_data)
+
+```
+
+
+#泊松回归模型调用示例
+```{r}
+############################################################
+# 脚本 1：泊松回归（Poisson Regression）
+############################################################
+
+britdoc <- data.frame(
+  agecat = rep(1:5, each=2),
+  smoke = rep(c(1,0), times=5),
+  deaths = c(32,2,
+             104,12,
+             206,28,
+             186,28,
+             102,31),
+  personyears = c(52407,18790,
+                  43248,10673,
+                  28612,5710,
+                  12663,2585,
+                  5317,1462)
+)
+
+britdoc$agesq <- britdoc$agecat^2
+britdoc$smkage <- britdoc$smoke * britdoc$agecat
+
+# -------------------------------------------------
+# 模型（与课本完全一致）
+# -------------------------------------------------
+res.britdoc = glm(
+  deaths ~ agecat + agesq + smoke + smkage +
+    offset(log(personyears)),
+  family = poisson,
+  data = britdoc
+)
+#注意，这里建模的是死亡率，死亡人数等于当年人数*exp(log 泊松的一堆变量)，所以log(personyears)固定为1
+
+summary(res.britdoc)
+
+# -------------------------------------------------
+# Pearon 残差、偏差等诊断（与课本一致）
+# -------------------------------------------------
+fit_p = fitted.values(res.britdoc)
+pearsonresid = (britdoc$deaths - fit_p)/sqrt(fit_p)
+chisq = sum(pearsonresid^2)
+
+devres = sign(britdoc$deaths - fit_p) *
+  sqrt(2*(britdoc$deaths*log(britdoc$deaths/fit_p) -
+          (britdoc$deaths-fit_p)))
+
+deviance = sum(devres^2)
+
+chisq
+deviance
+
+```
+
+泊松模板
+```{r}
+# =====================
+# 0. 载入你的数据
+# =====================
+yourdata <- read.csv("yourfile.csv")   # 或自己创建数据框
+britdoc <- data.frame(
+  agecat = rep(1:5, each=2),
+  smoke = rep(c(1,0), times=5),
+  deaths = c(32,2,
+             104,12,
+             206,28,
+             186,28,
+             102,31),
+  personyears = c(52407,18790,
+                  43248,10673,
+                  28612,5710,
+                  12663,2585,
+                  5317,1462)
+)
+
+# =====================
+# 1. 创建可能需要的变量
+# =====================
+# 连续变量的平方项
+yourdata$x2_sq <- yourdata$x2^2    
+
+# 分组变量（如果需要）
+# yourdata$group <- factor(yourdata$group)
+
+
+# =====================
+# 2. 建立 Poisson 回归模型
+# =====================
+fit <- glm(
+  y ~ x1 + x2 + x2_sq + x3 + 
+    offset(log(exposure)),
+  family = poisson,
+  data = yourdata
+)
+
+summary(fit)
+
+
+# =====================
+# 3. 计算拟合值、Pearson 残差、偏差
+# =====================
+fit_p <- fitted.values(fit)
+
+pearson_resid <- (yourdata$y - fit_p) / sqrt(fit_p)
+chisq <- sum(pearson_resid^2)
+
+devres <- sign(yourdata$y - fit_p) *
+  sqrt(2 * (yourdata$y * log(yourdata$y / fit_p) -
+            (yourdata$y - fit_p)))
+
+D <- sum(devres^2)
+
+chisq
+D
+
+```
+
+#对数线性模型调用示例
+
+##二维列联表对数线性模型
+```{r}
+# ============================================
+# 二维列联表对数线性模型独立性检验
+# ============================================
+
+# 1. 创建2×2列联表
+# 方法1：直接输入矩阵
+data_2d <- matrix(c(55, 45, 58, 41), 
+                  nrow = 2, 
+                  byrow = TRUE,
+                  dimnames = list(
+                    性别 = c("男", "女"),
+                    近视 = c("是", "否")
+                  ))
+
+print("二维列联表数据：")
+print(data_2d)
+
+# 方法2：从数据框创建（如果是原始数据）
+# df <- data.frame(性别 = c(rep("男",100), rep("女",99)),
+#                  近视 = c(rep("是",55), rep("否",45), 
+#                          rep("是",58), rep("否",41)))
+# data_2d <- table(df$性别, df$近视)
+
+# 2. 定义检验函数（与三维类似）
+f_2d <- function(x) {
+  df <- x$df
+  lrt <- x$lrt
+  p_lrt <- 1 - pchisq(lrt, df)
+  Q <- x$pear
+  p_pear <- 1 - pchisq(Q, df)
+  
+  if (p_lrt < 0.05 | p_pear < 0.05) {
+    conclusion <- "拒绝独立（相关）"
+  } else {
+    conclusion <- "接受独立"
+  }
+  
+  list(
+    自由度 = df,
+    似然比统计量_G2 = round(lrt, 4),
+    似然比p值 = round(p_lrt, 4),
+    Pearson统计量_Q = round(Q, 4),
+    Pearson_p值 = round(p_pear, 4),
+    结论 = conclusion
+  )
+}
+
+# 3. 检验独立性
+cat("\n============== 二维列联表独立性检验 ==============\n")
+
+# (1) 独立模型 (X, Y)
+cat("\n1. 独立模型 (X, Y)：性别与近视独立\n")
+m_indep <- loglin(data_2d, list(1, 2), fit = TRUE, param = TRUE)
+# list(1, 2)含义：
+# 保留：第1个变量（性别）的主效应，第2个变量（近视）的主效应
+# 去掉：性别×近视的交互项
+# 假设：P(性别,近视) = P(性别) × P(近视)
+print(f_2d(m_indep))
+
+# (2) 饱和模型 (XY)
+cat("\n2. 饱和模型 (XY)：包含交互项，完美拟合\n")
+m_sat <- loglin(data_2d, list(c(1, 2)), fit = TRUE, param = TRUE)
+# list(c(1,2))含义：
+# 保留：性别×近视的交互项
+# 自动包含：性别主效应，近视主效应
+# 假设：无任何独立性假设
+print(f_2d(m_sat))
+
+```
+
+##三维列联表对数线性模型
+```{r}
+# 1. 数据输入
+# --------------------------------------------------
+#matrix不写byrow默认是按列排的
+
+# 方法1：按书中方法（两个矩阵合并）
+A <- matrix(c(55, 58, 66, 85, 66, 50), nrow = 2)  # 近视数据
+B <- matrix(c(45, 41, 87, 70, 41, 39), nrow = 2)  # 不近视数据
+
+# 创建三维数组
+a <- array(c(A, B), dim = c(2, 3, 2))
+
+# 方法2：更直观的方式
+a2 <- array(c(
+  55, 58,  # 甲校近视（男，女）
+  66, 85,  # 乙校近视（男，女）
+  66, 50,  # 丙校近视（男，女）
+  45, 41,  # 甲校不近视（男，女）
+  87, 70,  # 乙校不近视（男，女）
+  41, 39   # 丙校不近视（男，女）
+), dim = c(2, 3, 2))
+
+# 添加维度标签
+dimnames(a) <- list(
+  gender = c("男", "女"),
+  school = c("甲", "乙", "丙"),
+  vision = c("近视", "不近视")
+)
+
+#dim = c(行数, 列数, 层数) = c(2, 2, 2)
+
+# 检查数据
+print("三维列联表数据：")
+print(a)
+
+# 2. 定义检验函数
+# --------------------------------------------------
+# 该函数计算模型的拟合优度检验结果
+f <- function(x) {
+  df <- x$df                    # 自由度
+  lrt <- x$lrt                  # 似然比检验统计量 G²
+  p_lrt <- 1 - pchisq(lrt, df)  # 似然比检验的p值
+  Q <- x$pear                   # Pearson 卡方统计量
+  p_pear <- 1 - pchisq(Q, df)   # Pearson 检验的p值
+  
+  # 在显著性水平α=0.10下判断
+  if (p_lrt < 0.10 | p_pear < 0.10) {
+    conclusion <- "不独立"
+  } else {
+    conclusion <- "独立"
+  }
+  
+  list(
+    自由度 = df,
+    似然比统计量 = round(lrt, 4),
+    似然比p值 = round(p_lrt, 4),
+    Pearson统计量 = round(Q, 4),
+    Pearson_p值 = round(p_pear, 4),
+    结论 = conclusion
+  )
+}
+
+# 3. 检验各种独立性假设
+# --------------------------------------------------
+# 注意：在loglin函数中，list()指定模型中要包含的边际表
+# 例如list(c(1,2), 3)表示模型包含(1,2)的边际表和(3)的边际表
+
+cat("\n============== 各种独立性假设检验 ==============\n")
+
+# (1) 完全独立模型 (X, Y, Z)
+cat("\n1. 完全独立模型 (X, Y, Z)：三变量互相独立\n")
+m1 <- loglin(a, list(1, 2, 3), fit = TRUE, param = TRUE)
+# list(1, 2, 3) 含义：
+# 保留：X主效应，Y主效应，Z主效应
+# 去掉：XY交互，XZ交互，YZ交互，XYZ三阶交互
+# 对应独立性：X⊥Y⊥Z
+print(f(m1))
+
+# (2) X独立于(Y,Z) [X, YZ]
+cat("\n2. 联合独立模型 (X, YZ)：X独立于(Y,Z)\n")
+m2 <- loglin(a, list(1, c(2, 3)), fit = TRUE, param = TRUE)
+# list(1, c(2, 3)) 含义：
+# 保留：X主效应，YZ交互项
+# 自动包含：Y主效应，Z主效应（层次性原则）
+# 去掉：XY交互，XZ交互，XYZ三阶交互
+# 对应独立性：X⊥(Y,Z)（X独立于Y和Z的联合）
+print(f(m2))
+
+# (3) Y独立于(X,Z) [Y, XZ]
+cat("\n3. 联合独立模型 (Y, XZ)：Y独立于(X,Z)\n")
+m3 <- loglin(a, list(2, c(1, 3)), fit = TRUE, param = TRUE)
+# list(2, c(1, 3)) 含义：
+# 保留：Y主效应，XZ交互项
+# 自动包含：X主效应，Z主效应
+# 去掉：XY交互，YZ交互，XYZ三阶交互
+# 对应独立性：Y⊥(X,Z)（Y独立于X和Z的联合）
+print(f(m3))
+
+# (4) Z独立于(X,Y) [Z, XY]
+cat("\n4. 联合独立模型 (Z, XY)：Z独立于(X,Y)\n")
+m4 <- loglin(a, list(3, c(1, 2)), fit = TRUE, param = TRUE)
+# list(3, c(1, 2)) 含义：
+# 保留：Z主效应，XY交互项
+# 自动包含：X主效应，Y主效应
+# 去掉：XZ交互，YZ交互，XYZ三阶交互
+# 对应独立性：Z⊥(X,Y)（Z独立于X和Y的联合）
+print(f(m4))
+
+# (5) 条件独立模型：给定Z，X与Y独立 [XZ, YZ]
+cat("\n5. 条件独立模型 (XZ, YZ)：给定Z，X与Y独立\n")
+m5 <- loglin(a, list(c(1, 3), c(2, 3)), fit = TRUE, param = TRUE)
+# list(c(1, 3), c(2, 3)) 含义：
+# 保留：XZ交互项，YZ交互项
+# 自动包含：X主效应，Y主效应，Z主效应
+# 去掉：XY交互，XYZ三阶交互
+# 对应独立性：X⊥Y|Z（给定Z时，X与Y独立）
+print(f(m5))
+
+# (6) 条件独立模型：给定Y，X与Z独立 [XY, YZ]
+cat("\n6. 条件独立模型 (XY, YZ)：给定Y，X与Z独立\n")
+m6 <- loglin(a, list(c(1, 2), c(2, 3)), fit = TRUE, param = TRUE)
+# list(c(1, 2), c(2, 3)) 含义：
+# 保留：XY交互项，YZ交互项
+# 自动包含：X主效应，Y主效应，Z主效应
+# 去掉：XZ交互，XYZ三阶交互
+# 对应独立性：X⊥Z|Y（给定Y时，X与Z独立）
+print(f(m6))
+
+# (7) 条件独立模型：给定X，Y与Z独立 [XY, XZ]
+cat("\n7. 条件独立模型 (XY, XZ)：给定X，Y与Z独立\n")
+m7 <- loglin(a, list(c(1, 2), c(1, 3)), fit = TRUE, param = TRUE)
+# list(c(1, 2), c(1, 3)) 含义：
+# 保留：XY交互项，XZ交互项
+# 自动包含：X主效应，Y主效应，Z主效应
+# 去掉：YZ交互，XYZ三阶交互
+# 对应独立性：Y⊥Z|X（给定X时，Y与Z独立）
+print(f(m7))
+
+# (8) 无三阶交互模型 (XY, XZ, YZ)
+cat("\n8. 无三阶交互模型 (XY, XZ, YZ)：所有两两交互存在，无三阶交互\n")
+m8 <- loglin(a, list(c(1, 2), c(1, 3), c(2, 3)), fit = TRUE, param = TRUE)
+# list(c(1, 2), c(1, 3), c(2, 3)) 含义：
+# 保留：XY交互项，XZ交互项，YZ交互项
+# 自动包含：X主效应，Y主效应，Z主效应
+# 去掉：XYZ三阶交互
+# 对应独立性：无三因素交互作用，但所有两两相关
+print(f(m8))
+
+# (9) 饱和模型 (XYZ) - 完美拟合
+cat("\n9. 饱和模型 (XYZ)：包含所有交互项，完美拟合\n")
+# 饱和模型写法：list(c(1, 2, 3)) 或直接拟合所有参数
+# 保留：XYZ三阶交互项，XY交互，XZ交互，YZ交互
+# 自动包含：X主效应，Y主效应，Z主效应
+# 去掉：无（完美拟合数据，残差为0）
+# 对应独立性：无任何独立性假设
+```
+近视：甲男，甲女，乙男，乙女，丙男，丙女
+不近视：甲男，甲女，乙男，乙女，丙男，丙女
+
+(Z) × (学校: 甲→乙→丙) × (性别: 男→女)
+
+先乘最后两个
+
+没有相关性的直接不纳入模型，直接失活
+
+
+##交互法则
+法则1：看c()里面包含了哪些变量
+c(1,2) → 保留XY交互
+
+c(1,3) → 保留XZ交互
+
+c(2,3) → 保留YZ交互
+
+c(1,2,3) → 保留XYZ三阶交互
+
+法则2：单独的数字只有主效应
+1 → 只有X的主效应（不与其他变量交互）
+
+2 → 只有Y的主效应
+
+3 → 只有Z的主效应
+
+法则3：层次性原则（自动包含低阶项）
+如果模型中包含高阶交互，R会自动包含所有低阶交互和主效应：
+
+包含c(1,2) → 自动包含1(X主效应)和2(Y主效应)
+
+包含c(1,2,3) → 自动包含所有主效应和两两交互
+
+法则4：检验什么独立性就去掉什么交互
+检验X⊥Y → 去掉c(1,2)(XY交互)
+
+检验X⊥Z → 去掉c(1,3)(XZ交互)
+
+检验Y⊥Z → 去掉c(2,3)(YZ交互)
+
+检验X⊥Y|Z → 去掉c(1,2)但保留c(1,3)和c(2,3)

@@ -1,0 +1,788 @@
+---
+title: "第四单元函数调用接口"
+author: "柴王珩 2023201563"
+date: "2025-11-19"
+output: html_document
+---
+
+#方差分析
+
+##单因素方差分析
+
+```{r}
+#e.g，三种饲料饲养鸭子两个月后的体重增加 A 1.4 1.9 2.0 1.5 B 2.0 2.4 1.8 2.2 C 2.6 2.8 2.5 2.1
+# 创建数据框
+xy <- data.frame(
+  y = c(1.4, 1.9, 2.0, 1.5, 2.0, 2.4, 1.8, 2.2, 2.6, 2.8, 2.5, 2.1),
+  x = factor(rep(c("A", "B", "C"), each = 4))#每种处理有四个重复观测
+)
+
+# 查看数据结构
+str(xy)
+head(xy)
+
+#语法aov(formula = 因变量 ~ 自变量, data = 数据集, na.action = 缺失值处理方式)
+aov(formula = y~x,data=xy,na.action=na.exclude)
+```
+
+##完全随机区组设计下的双因素方差分析
+
+```{r}
+#完全随机区组设计下双因素方差分析
+# 示例数据：研究3种肥料（处理）在4个区组中对作物产量的影响
+data <- data.frame(
+  产量 = c(12, 14, 15, 13, 16, 18, 17, 19, 20, 22, 21, 23),
+  肥料 = factor(rep(c("A", "B", "C"), each = 4)),
+  区组 = factor(rep(1:4, times = 3))
+)
+
+# 完全随机区组设计模型
+# 公式：y ~ 处理因素 + 区组因素
+model <- aov(产量 ~ 肥料 + 区组, data = data)
+
+# 查看结果
+summary(model)
+```
+
+##均衡的不完全区组设计
+
+```{r}
+#均衡的不完全区组设计满足以下条件BIB(k,b,r,t,\lambda)
+#每个处理在同一区组中最多出现一次
+#区组样本量为t,t为每个区组设计的样本量,t小于处理个数k
+#每个处理出现在同样多的r个区组中
+#每两个处理在一个区组中相遇的次数一样
+#用数学的语,这些参数满足
+#kr=bt
+#\lambda(k-1)=r(t-1)
+#b\ge r或k>t
+#如果t=k,r=b则为完全随机区组设计
+
+
+#随机区组生成
+#区组的生成调用agricolae
+# 安装并加载包
+library("agricolae")
+
+# 设置参数
+k <- 4      # 处理数
+b <- 4      # 区组数
+r <- 3      # 每个处理重复次数
+t <- 3      # 每区组处理数
+lambda <- 2 # 每对处理同时出现次数
+
+# 生成设计
+design <- design.bib(trt = paste0("T", 1:k), k = t, seed = 123)
+
+# 查看区组安排
+design$book
+
+#block表示区组，后面的T表示是第几类treatment，构造数据框进行检验
+
+# 1. 构造数据框，空缺用 NA 表示
+data <- data.frame(
+  Block = c(rep("I",4), rep("II",4), rep("III",4), rep("IV",4)),
+  Treatment = rep(c("A","B","C","D"), times=4),
+  Yield = c(34, NA, 36, 40,
+            28, 30, 44, NA,
+            NA, 36, 48, 54,
+            59, 45, NA, 60)
+)
+
+# 查看数据
+data
+
+library(lme4)
+
+# 拟合模型
+model <- lmer(Yield ~ Treatment + (1 | Block), data = data)
+
+# 方差分析
+anova(model)
+summary(model)
+
+#treatment表示要探究的因素,1|block,这里的block是随机区组，就是不完全的区组
+#Estimate Std. Error t value
+#(Intercept)   41.139      5.643   7.291
+#TreatmentB    -6.939      4.043  -1.716  后面是检验意义下比A好的程度，检验结果是后面的t值
+#TreatmentC     5.594      4.043   1.384
+#TreatmentD     8.123      4.043   2.009
+
+
+```
+
+#多重检验问题
+
+##benferroni法则(\alpha直接除以样本量)
+```{r}
+#直接使用Bonferroni进行多重检验
+# 原始 p 值
+p <- c(0.0024,0.0056,0.0096,0.0121,0.0201,
+       0.0278,0.0298,0.0344,0.0349,0.3240,
+       0.4262,0.5719,0.6528,0.7590,1.0000)
+
+# Bonferroni 多重检验校正
+p_bonf <- p.adjust(p, method = "bonferroni")
+
+# 输出结果
+p_bonf
+```
+
+##BH型检验
+```{r}
+#BH检验
+#独立检验的p值如下
+p <- c(0.0024,0.0056,0.0096,0.0121,0.0201,0.0278,0.0298,0.0344,0.0349,0.3240,0.4262,0.5719,0.6528,0.7590,1.0000)
+#升序排列直接调用sort,可选decreasing,默认是false,也就是升序
+sort(p)
+
+# 进行 BH（Benjamini-Hochberg）校正
+p_adj <- p.adjust(p, method = "BH")
+#p.adjust(p, method = "BH") 函数 内部会自动按升序处理，并且 会自动还原到原来的顺序。也就得到原始p值向量每个p值校正后的值
+# 输出结果
+#结果表明拒绝前4个假设
+```
+
+#HC高阶鉴定法
+
+##HC鉴定法经典算法
+
+```{r}
+#HC高阶鉴定法
+#算法流程(1)对每个检验计算一个统计量得分，根据统计量得分计算p值 
+#(2)对p值进行排序，得pi_{(1)}<pi_{(2)}<...<pi_{(p)}
+#(3)计算第k个HC得分，相当于计算二阶z得分：
+#$$HC_{p,k}=sqrt{p}[\frac{k/p-\pi_{(k)}}{\sqrt{\pi_{(k)}(1-\pi_{k})}]$$
+#(4)取最大值，计算对应的HC_p^{*}=max_{1\lek\lep\alpha_0}\{HC_{p,k}\}，找到对应的k，前k个检验可以认为是真显著的，拒绝所有的H_{(i)},i=1,2,...,k
+p <- c(0.0024,0.0056,0.0096,0.0121,0.0201,0.0278,0.0298,0.0344,0.0349,0.3240,0.4262,0.5719,0.6528,0.7590,1.0000)
+
+# HC 高阶鉴定法（Higher Criticism）——R实现
+hc_test <- function(p, alpha0 = 0.5, eps = 1e-12, verbose = TRUE) {
+  # p: 向量，原始 p 值（不必先排序，函数内部会排序并还原）
+  # alpha0: 上限比例 (0 < alpha0 <= 1)，通常 0.1 ~ 0.5 可选。默认 0.5
+  # eps: 防止除以 0 或 sqrt(0) 的小常数
+  # 返回：列表，含 HC 值序列、最大 HC、k*, 被拒绝索引（按原始顺序）等
+  
+  p <- as.numeric(p)
+  m <- length(p)
+  if (m < 1) stop("p must have length >= 1")
+  if (alpha0 <= 0 || alpha0 > 1) stop("alpha0 must be in (0,1]")
+  
+  # 排序并记住原始索引
+  ord <- order(p)
+  p_sorted <- p[ord]
+  
+  # k 的上限（floor）
+  kmax <- max(1, floor(alpha0 * m))
+  
+  # 计算 HC_{p,k} 对每个 k = 1..kmax
+  ks <- seq_len(kmax)
+  hc_vals <- numeric(kmax)
+  for (i in ks) {
+    pk <- p_sorted[i]
+    denom <- sqrt( max(pk * (1 - pk), eps) )  # 避免除以0
+    hc_vals[i] <- sqrt(m) * ((i / m) - pk) / denom
+  }
+  
+  # 找到最大 HC 及对应的 k（若有多个取第一个最大）
+  k_star <- which.max(hc_vals)
+  HC_star <- hc_vals[k_star]
+  
+  # 被拒绝的是前 k_star 个最小 p 值（返回原始索引）
+  rej_sorted_idx <- ord[1:k_star]      # 原始索引中被拒绝的位置
+  rejected_pvalues <- p[rej_sorted_idx]
+  
+  if (verbose) {
+    cat("HC test results:\n")
+    cat(" m =", m, "   alpha0 =", alpha0, "   kmax =", kmax, "\n")
+    cat("HC values (k from 1 to kmax):\n")
+    print(round(hc_vals, 4))
+    cat(sprintf("Max HC = %.4f at k* = %d\n", HC_star, k_star))
+    cat("Reject the hypotheses corresponding to the smallest k* p-values (original indices):\n")
+    print(rej_sorted_idx)
+    cat("Their p-values:\n")
+    print(round(rejected_pvalues, 6))
+    cat("\nNote: 若需 HC* 的显著性阈值，请用模拟（bootstrap / permutation）或理论极限分布进行检验。\n")
+  }
+  
+  return(list(m = m,
+              alpha0 = alpha0,
+              kmax = kmax,
+              p_sorted = p_sorted,
+              hc_vals = hc_vals,
+              k_star = k_star,
+              HC_star = HC_star,
+              rejected_idx = rej_sorted_idx,
+              rejected_pvalues = rejected_pvalues))
+}
+
+# ------------- 示例（用你给的 p 向量） ---------------
+p <- c(0.0024,0.0056,0.0096,0.0121,0.0201,0.0278,0.0298,0.0344,0.0349,0.3240,0.4262,0.5719,0.6528,0.7590,1.0000)
+
+# 运行 HC 检验(alpha0 选 0.5，常用)(这里设置成1，允许拒绝所有的假设)
+res <- hc_test(p, alpha0 = 1)
+
+# 若你只想要被拒绝的 p 值：
+res$rejected_pvalues
+```
+
+##改进版IF-PCA算法
+
+```{r}
+#改进的HC算法IF-PCA方法
+#二阶Z得分如下$$HC_{p,k}=\frac{\sqrt{p}(k/p-\pi_{(k)})}{\sqrt{k/p+max\{\sqrt{n}(k/p-\pi_{(k)}),0\}}}$$,取最大值，计算相应的HC_{p}^{*}=max_{1\lek\lep/2,\pi_{(k)}<log(p)/p}{HC_{p,k}}
+#找到对应的k，前k个检验可以认为是真显著的
+hc_if_test <- function(p, n, alpha0 = 0.5, eps = 1e-12, verbose = TRUE) {
+  p <- as.numeric(p)
+  m <- length(p)
+  ord <- order(p)
+  p_sorted <- p[ord]
+  
+  kmax <- max(1, floor(alpha0 * m))
+  hc_vals <- numeric(kmax)
+  
+  for (k in 1:kmax) {
+    pk <- p_sorted[k]
+    denom <- sqrt(k/m + max(sqrt(n) * ((k/m) - pk), 0))
+    hc_vals[k] <- sqrt(m) * ((k/m) - pk) / (denom + eps)
+  }
+  
+  mask <- p_sorted < log(m)/m
+  hc_vals[!mask[1:kmax]] <- NA
+  
+  k_star <- which.max(hc_vals)
+  HC_star <- hc_vals[k_star]
+  rej_idx <- ord[1:k_star]
+  
+  if (verbose) {
+    cat("------ 改进版 IF-HC 鉴定法结果 ------\n")
+    cat("m =", m, "  n =", n, "  α₀ =", alpha0, "\n")
+    cat("HC值（前k个）:\n")
+    print(round(hc_vals, 4))
+    cat(sprintf("\n最大HC = %.4f, 出现在 k* = %d\n", HC_star, k_star))
+    cat("拒绝的检验原始索引：", rej_idx, "\n")
+    cat("对应p值：\n")
+    print(round(p[rej_idx], 5))
+  }
+  
+  return(list(
+    hc_vals = hc_vals,
+    HC_star = HC_star,
+    k_star = k_star,
+    rejected_idx = rej_idx,
+    rejected_pvalues = p[rej_idx]
+  ))
+}
+
+# ------------------ 示例 -------------------
+hc_if_test(p, n = 50, alpha0 = 1)#alpha0=1允许拒绝全部的假设
+
+```
+
+#kruskal-wallis单因素方差分析
+
+##(包含两两比较确定差异明显的组的组合)
+检验k个总体位置是否相同，即均值是否完全相等
+```{r}
+kruskal_pairwise_tie <- function(x, group) {
+  # --------------------------
+  # 通用 Kruskal-Wallis + 两两比较（含 ties 修正）
+  # --------------------------
+  
+  # 参数检查
+  if (length(x) != length(group)) {
+    stop("数据向量和分组向量长度必须一致。")
+  }
+  
+  group <- as.factor(group)
+  n <- length(x)
+  
+  # 1️⃣ Kruskal-Wallis 检验
+  kw <- kruskal.test(x ~ group)
+  cat("Kruskal-Wallis 检验结果：\n")
+  print(kw)
+  
+  # 2️⃣ 若显著则继续两两比较
+  if (kw$p.value < 0.05) {
+    cat("\n原假设被拒绝（p < 0.05），进行两两比较（含结修正）...\n")
+    
+    # 计算秩次与分组信息
+    R <- rank(x)
+    groups <- levels(group)
+    k <- length(groups)
+    
+    ni <- tapply(x, group, length)
+    Ri_bar <- tapply(R, group, mean)
+    
+    # ties 修正项
+    tie_table <- table(x)
+    tie_correction <- sum(tie_table^3 - tie_table)
+    correction_factor <- (n * (n + 1) / 12) - tie_correction / (12 * (n - 1))
+    
+    # 存放结果
+    results <- data.frame(
+      Group1 = character(),
+      Group2 = character(),
+      Diff_Rank = numeric(),
+      SE = numeric(),
+      Statistic = numeric(),
+      p_value = numeric(),
+      stringsAsFactors = FALSE
+    )
+    
+    # 两两比较
+    for (i in 1:(k-1)) {
+      for (j in (i+1):k) {
+        SE <- sqrt(correction_factor * (1/ni[i] + 1/ni[j]))
+        d <- abs(Ri_bar[i] - Ri_bar[j]) / SE
+        p <- 2 * (1 - pnorm(d))  # 双侧检验
+        
+        results <- rbind(results,
+                         data.frame(
+                           Group1 = groups[i],
+                           Group2 = groups[j],
+                           Diff_Rank = abs(Ri_bar[i] - Ri_bar[j]),
+                           SE = SE,
+                           Statistic = d,
+                           p_value = p))
+      }
+    }
+    
+    # 显著性标记
+    results$Significance <- ifelse(results$p_value < 0.05, "*", "")
+    
+    cat("\n两两比较结果表（含 ties 修正）:\n")
+    print(results)
+    
+    return(list(KW_result = kw, Pairwise = results))
+  } else {
+    cat("\n未拒绝原假设，各组差异不显著。\n")
+    return(list(KW_result = kw))
+  }
+}
+
+
+# 示例数据
+drug <- c(80,203,236,252,284,368,457,393,
+          133,180,100,160,
+          156,295,320,448,465,481,279,
+          194,214,272,330,386,475)
+gr.drug <- c(1,1,1,1,1,1,1,1,
+             2,2,2,2,
+             3,3,3,3,3,3,3,
+             4,4,4,4,4,4)
+
+# 调用函数
+result <- kruskal_pairwise_tie(drug, gr.drug)
+```
+
+#jonckheeere-Terpstra检验
+
+该检验用于检验服从相同类型分布的不同组数据位置参数是否相同，即$F(x-\theta_1),F(x-\theta_2),....,F(x-\theta_n)$的位置参数$\theta_1,...,\theta_n$是否全相等
+```{r}
+#jonckheere-Terpstra检验
+library("clinfun")
+G1<-c(125,136,116,101,105,109)
+G2<-c(122,114,131,120,119,127)
+G3<-c(128,142,128,134,135,131,140,129)
+G123<-list(G1,G2,G3)
+n<-c(length(G1),length(G2),length(G3))
+#注意这个语法
+group_label<-as.ordered(factor(rep(1:length(n),n)))#1:n 后面的向量是各自的rep次数，生成标签的方法
+#unlist是将list展平成向量,相当于flatten
+jonckheere.test(unlist(G123),group_label,alternative = "increasing")
+```
+
+#Fridman秩方差分析法
+
+##传统检验
+```{r}
+# Friedman检验
+BF <- c(85,82,83,79,87,75,86,82,90,81,80,76,80,75,81,75)
+treat.BF <- rep(c(1,2,3,4),4)
+block.BF <- as.ordered(rep(1:4,c(4,4,4,4)))
+
+friedman.test(BF, treat.BF, block.BF)
+```
+
+##Hollander-wolfe两两样本比较
+
+```{r}
+# Hollander-Wolfe两两比较函数（包含结修正）
+hollander.wolfe.test <- function(y, groups, blocks) {
+  # 数据准备
+  k <- length(unique(groups))  # 处理组数
+  b <- length(unique(blocks))  # 区组数
+  
+  # 计算每个区组内的秩
+  data_df <- data.frame(y = y, groups = groups, blocks = blocks)
+  data_df$rank <- ave(data_df$y, data_df$blocks, FUN = function(x) rank(x, ties.method = "average"))
+  
+  # 计算每个处理组的秩和（R_{.i}）
+  R_sum <- tapply(data_df$rank, data_df$groups, sum)
+  
+  # 计算结修正因子
+  tie_correction <- 0
+  for(i in unique(blocks)) {
+    block_data <- data_df[data_df$blocks == i, "y"]
+    tie_table <- table(block_data)
+    t_j <- tie_table[tie_table > 1]
+    if(length(t_j) > 0) {
+      tie_correction <- tie_correction + sum(t_j^3 - t_j)
+    }
+  }
+  
+  # 计算标准误（包含结修正）
+  SE <- sqrt((b * k * (k + 1)) / 6 - (b * tie_correction) / (6 * (k - 1)))
+  
+  # 生成所有两两比较组合
+  group_pairs <- combn(unique(groups), 2)
+  n_pairs <- ncol(group_pairs)
+  
+  # 创建结果数据框
+  results <- data.frame(
+    Group1 = group_pairs[1, ],
+    Group2 = group_pairs[2, ],
+    R_sum1 = R_sum[group_pairs[1, ]],
+    R_sum2 = R_sum[group_pairs[2, ]],
+    Diff = abs(R_sum[group_pairs[1, ]] - R_sum[group_pairs[2, ]]),
+    SE = rep(SE, n_pairs)
+  )
+  
+  # 计算D_ij和z值
+  results$D_ij <- results$Diff / results$SE
+  results$z_value <- results$D_ij
+  
+  # 计算p值（双侧检验）
+  results$p_value <- 2 * (1 - pnorm(abs(results$z_value)))
+  
+  # 添加显著性标记
+  results$Significance <- ifelse(results$p_value < 0.001, "***",
+                                 ifelse(results$p_value < 0.01, "**",
+                                        ifelse(results$p_value < 0.05, "*",
+                                               ifelse(results$p_value < 0.1, ".", "ns"))))
+  
+  return(results)
+}
+
+# 使用修正后的函数进行两两比较
+pairwise_results <- hollander.wolfe.test(BF, treat.BF, block.BF)
+print(pairwise_results)
+```
+
+#HL修正秩和检验
+
+```{r}
+hl.aligned.test <- function(y, groups, blocks, align.method = c("mean", "median")) {
+  # 参数验证
+  if (length(y) != length(groups) || length(y) != length(blocks)) {
+    stop("'y', 'groups', and 'blocks' must have the same length")
+  }
+  
+  # 转换为因子以确保正确处理
+  groups <- factor(groups)
+  blocks <- factor(blocks)
+  align.method <- match.arg(align.method)
+  
+  # 创建数据框
+  data <- data.frame(y = y, groups = groups, blocks = blocks)
+  k <- nlevels(groups)  # 处理数
+  b <- nlevels(blocks)  # 区组数
+  n <- k * b            # 总观测数
+  
+  # 步骤1: 计算每个区组的中心位置估计值
+  if (align.method == "mean") {
+    block_centers <- tapply(data$y, data$blocks, mean, na.rm = TRUE)
+  } else {
+    block_centers <- tapply(data$y, data$blocks, median, na.rm = TRUE)
+  }
+  
+  # 步骤2: 数据对齐（减去区组中心值）
+  data$aligned <- data$y - block_centers[as.character(data$blocks)]
+  
+  # 步骤3: 对调整后的观测值求混合秩（处理结）
+  ranked_data <- rank(data$aligned)
+  data$aligned_rank <- ranked_data
+  
+  # 检测是否存在结
+  has_ties <- length(unique(data$aligned)) != n
+  
+  # 步骤4: 计算检验统计量
+  # R_j: 第j个处理的秩和
+  R_j <- tapply(data$aligned_rank, data$groups, sum)
+  
+  # R_i: 第i个区组的秩和
+  R_i <- tapply(data$aligned_rank, data$blocks, sum)
+  
+  # 计算各个平方和
+  sum_R_j_squared <- sum(R_j^2)
+  sum_R_ij_squared <- sum(data$aligned_rank^2)
+  sum_R_i_squared <- sum(R_i^2)
+  
+  # 总秩和平方的期望
+  total_rank_sum_squared <- (n * (n + 1) / 2)^2
+  
+  if (has_ties) {
+    # 有结情况：使用修正的统计量 Q̄'
+    numerator <- (k - 1) * (sum_R_j_squared - (k * b^2 * (n + 1)^2) / 4)
+    denominator <- sum_R_ij_squared - (1/k) * sum_R_i_squared
+    Q_stat <- numerator / denominator
+    
+    method_name <- paste("Hodges-Lehmann Aligned Ranks Test with ties correction (aligned by", align.method, ")")
+  } else {
+    # 无结情况：使用原始统计量 Q̄
+    numerator <- (k - 1) * (sum_R_j_squared - total_rank_sum_squared / n)
+    denominator_part1 <- (1/6) * n * (n + 1) * (2 * n + 1)
+    denominator_part2 <- (1/k) * sum_R_i_squared
+    denominator <- denominator_part1 - denominator_part2
+    Q_stat <- numerator / denominator
+    
+    method_name <- paste("Hodges-Lehmann Aligned Ranks Test (aligned by", align.method, ")")
+  }
+  
+  # 计算p值（自由度为 k-1 的卡方分布）
+  p_value <- pchisq(Q_stat, df = k - 1, lower.tail = FALSE)
+  
+  # 返回结果对象
+  result <- list(
+    statistic = c("Q-bar" = Q_stat),
+    parameter = c(df = k - 1),
+    p.value = p_value,
+    method = method_name,
+    data.name = paste("y =", deparse(substitute(y)), 
+                      "groups =", deparse(substitute(groups)),
+                      "blocks =", deparse(substitute(blocks))),
+    aligned.ranks = data$aligned_rank,
+    group.rank.sums = R_j,
+    block.rank.sums = R_i,
+    has.ties = has_ties,
+    n.groups = k,
+    n.blocks = b,
+    align.method = align.method
+  )
+  
+  class(result) <- "htest"
+  return(result)
+}
+
+# 增强的打印方法，显示更多信息
+print.hl.aligned.test <- function(x, ...) {
+  cat("\n")
+  cat(strwrap(x$method, prefix = "\t"), sep = "\n")
+  cat("\n")
+  cat("data: ", x$data.name, "\n")
+  cat("Q-bar =", round(x$statistic, 4), ", df =", x$parameter, 
+      ", p-value =", format.pval(x$p.value, digits = 4), "\n")
+  if (x$has.ties) {
+    cat("(Ties were present and corrected for)\n")
+  }
+  cat("\nGroup rank sums:\n")
+  print(x$group.rank.sums)
+  invisible(x)
+}
+
+# 公式接口版本
+hl.aligned.test.formula <- function(formula, data, align.method = c("mean", "median")) {
+  align.method <- match.arg(align.method)
+  
+  # 解析公式（模仿 friedman.test 的公式格式：y ~ groups | blocks）
+  if (length(formula) != 3L) 
+    stop("'formula' must be of the form 'y ~ groups | blocks'")
+  
+  formula[[2L]] <- as.name("y")
+  formula[[3L]] <- as.name("groups")
+  
+  mf <- model.frame(formula, data = data)
+  if (ncol(mf) != 2L) 
+    stop("'formula' must be of the form 'y ~ groups | blocks'")
+  
+  y <- mf[[1L]]
+  groups <- mf[[2L]]
+  blocks <- model.extract(model.frame(update(formula, . ~ . - groups + blocks), 
+                                      data = data), "blocks")
+  
+  hl.aligned.test(y, groups, blocks, align.method = align.method)
+}
+
+```
+
+调用示例
+
+```{r}
+data<-c(29,25,27,26,8.5,32,28,23,17.5,14.5,12,5,22,24,7,31,6,19,30,16,21,4,10.5,13,10.5,8.5,3,20,14.5,1,17.5,2)
+treat<-c(1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4)
+block<-rep(1:8,4)
+
+hl.aligned.test(data,treat,block,"mean")
+
+```
+
+#cochran检验
+和卡方检验具有单选项和复选项的区别，cochran一个受试者可以选择多个选项，比如说喜爱程度，如果假设均匀分布，由于复选项的原因，卡方的检验效果会不如cochran
+```{r}
+candid1<-c(0,0,0,1,0,0,0,0,0,1)#第一个处理
+candid2<-c(1,1,0,1,0,1,0,0,1,1)#第二个处理
+candid3<-c(1,1,1,1,1,1,1,1,1,0)#第三个处理
+#共十个区组(受试者)
+candid<-matrix(c(candid1,candid2,candid3),nrow=10,ncol=3)#变成标准形式的cochran表
+#行名称是区组名，列名称是处理名称
+nidot.candid=apply(candid,1,sum)#得到行和向量
+njdot.candid=apply(candid,2,sum)#得到列和的向量
+k<-ncol(candid)#得到每个区组内的处理数量
+#计算cochran统计量
+Q=(k-1)*((k*sum(njdot.candid^2)-(sum(njdot.candid))^2))/
+  +(k*sum(nidot.candid)-sum(nidot.candid^2))
+pvalue.candid=pchisq(Q,k-1,lower.tail = F)
+```
+
+##仿fridman的一般函数接口
+```{r}
+cochranQ.test <- function(y, treat, block) {
+  # 输入检查
+  if (length(y) != length(treat) || length(y) != length(block)) {
+    stop("y, treat, block 的长度必须一致")
+  }
+  
+  treat  <- factor(treat)
+  block  <- factor(block)
+  
+  # 构造 block × treat 的矩阵
+  data_mat <- xtabs(y ~ block + treat)
+  
+  # 行和、列和
+  nidot <- rowSums(data_mat)
+  njdot <- colSums(data_mat)
+  
+  b <- nrow(data_mat)  # 区组数
+  k <- ncol(data_mat)  # 处理数
+  
+  # Cochran’s Q 统计量
+  Q <- (k - 1) * (k * sum(njdot^2) - (sum(njdot))^2) /
+       (k * sum(nidot) - sum(nidot^2))
+  
+  # p 值
+  p.value <- pchisq(Q, df = k - 1, lower.tail = FALSE)
+  
+  # 返回结果（模仿 R 自带检验格式）
+  out <- list(
+    statistic = Q,
+    parameter = k - 1,
+    p.value   = p.value,
+    method    = "Cochran's Q Test",
+    data.name = deparse(substitute(y))
+  )
+  class(out) <- "htest"
+  return(out)
+}
+
+
+```
+
+调用示例
+```{r}
+candid1 <- c(0,0,0,1,0,0,0,0,0,1)  
+candid2 <- c(1,1,0,1,0,1,0,0,1,1)
+candid3 <- c(1,1,1,1,1,1,1,1,1,0)
+
+y <- c(candid1, candid2, candid3)
+treat <- rep(c("T1","T2","T3"), each = 10)
+block <- rep(1:10, times = 3)
+
+cochranQ.test(y, treat, block)
+
+```
+
+
+#Durbin不完全区组分析法
+```{r}
+durbin.test <- function(data) {
+  # 检查输入是否为矩阵
+  if (!is.matrix(data)) {
+    stop("输入数据必须为矩阵")
+  }
+  
+  # 获取处理数(k)和区组数(b)
+  k <- nrow(data)  # 处理数
+  b <- ncol(data)  # 区组数
+  
+  # 计算每个处理出现的次数(r)和每个区组的容量(t)
+  r <- apply(!is.na(data), 1, sum)  # 每个处理的重复次数
+  t <- apply(!is.na(data), 2, sum)  # 每个区组的样本量
+  
+  # 对于平衡设计，取唯一值
+  r_value <- mean(r)  # 每个处理出现的平均次数
+  t_value <- mean(t)  # 每个区组的平均容量
+  
+  # 计算每个区组内的秩
+  rank_data <- matrix(NA, nrow = k, ncol = b)
+  
+  for (j in 1:b) {
+    block_values <- data[, j]
+    valid_indices <- which(!is.na(block_values))
+    if (length(valid_indices) > 0) {
+      valid_values <- block_values[valid_indices]
+      ranks <- rank(valid_values)
+      rank_data[valid_indices, j] <- ranks
+    }
+  }
+  
+  # 计算每个处理的秩和
+  R_i <- apply(rank_data, 1, sum, na.rm = TRUE)
+  
+  # 使用正确的Durbin统计量公式
+  # D = [12(k-1)/(rk(t²-1))] * sum(R_i²) - [3r(k-1)(t+1)/(t-1)]
+  
+  D_first_term <- (12 * (k - 1)) / (r_value * k * (t_value^2 - 1)) * sum(R_i^2)
+  D_second_term <- 3 * r_value * (k - 1) * (t_value + 1) / (t_value - 1)
+  
+  D_stat <- D_first_term - D_second_term
+  
+  # 计算p值（卡方分布近似）
+  df <- k - 1  # 自由度
+  p_value <- pchisq(D_stat, df = df, lower.tail = FALSE)
+  
+  # 输出结果
+  cat("Durbin不完全区组检验\n")
+  cat("=====================\n")
+  cat("处理数 (k):", k, "\n")
+  cat("区组数 (b):", b, "\n")
+  cat("每个处理重复次数 (r):", round(r_value, 2), "\n")
+  cat("每个区组容量 (t):", round(t_value, 2), "\n")
+  cat("秩和 (R_i):", round(R_i, 2), "\n")
+  cat("D统计量:", round(D_stat, 4), "\n")
+  cat("自由度:", df, "\n")
+  cat("p值:", round(p_value, 4), "\n")
+  cat("显著性水平 α=0.05:\n")
+  
+  if (p_value < 0.05) {
+    cat("拒绝原假设：处理之间存在显著差异\n")
+  } else {
+    cat("不拒绝原假设：没有足够证据表明处理之间存在显著差异\n")
+  }
+  
+  # 返回结果列表
+  return(list(
+    statistic = D_stat,
+    parameter = df,
+    p.value = p_value,
+    ranks = R_i,
+    method = "Durbin不完全区组检验"
+  ))
+}
+
+# 测试数据
+mat <- matrix(c(
+  73, 74, NA, 71,
+  NA, 75, 67, 72,
+  74, 75, 68, NA,
+  75, NA, 72, 75
+), nrow = 4, byrow = TRUE)
+
+rownames(mat) <- c("A", "B", "C", "D")
+colnames(mat) <- c("I", "II", "III", "IV")
+
+# 执行Durbin检验
+result <- durbin.test(mat)
+print(result)
+```
+

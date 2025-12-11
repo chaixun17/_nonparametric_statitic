@@ -1,0 +1,258 @@
+---
+title: "第三单元函数调用接口"
+author: "柴王珩 2023201563"
+date: "2025-11-19"
+output: html_document
+---
+
+#Brown-mood中位数检验代码(也可检验分位数)
+
+```{r}
+#Brown-Mood检验
+BM.test <- function(x, y, alt = "two.sided", p = 0.5) {
+  # 合并样本
+  xy <- c(x, y)
+  m <- length(x)
+  n <- length(y)
+  N <- m + n
+  
+  # 计算总体p分位数
+  qp.xy <- quantile(xy, probs = p, type = 2)  # type=2用于与中位数定义一致
+  
+  # 计算大于分位数的观测值数量
+  t <- sum(xy > qp.xy)
+  
+  # 理论上的t值（对于p分位数）
+  t_theoretical <- floor(N * (1 - p))
+  
+  # 计算x样本中大于分位数的观测值数量
+  A <- sum(x > qp.xy)
+  
+  # 超几何分布概率计算
+  player <- function(k, m, n, t) {
+    phyper(k, m, n, t)
+  }
+  
+  # 根据备择假设计算p值
+  if (alt == "greater") {
+    # H1: x的位置参数大于y的位置参数
+    p.value <- 1 - phyper(A - 1, m, n, t)  #1-比A小的概率，如果减出来很小，说明A已经很大了，接近m
+  } else if (alt == "less") {
+    # H1: x的位置参数小于y的位置参数
+    p.value <- phyper(A, m, n, t)
+  } else if (alt == "two.sided") {
+    # 双侧检验
+    p1 <- phyper(A, m, n, t)  # 左侧概率
+    p2 <- 1 - phyper(A - 1, m, n, t)  # 右侧概率
+    p.value <- 2 * min(p1, p2)  # 双侧p值
+  } else {
+    stop("alt参数必须是'greater', 'less'或'two.sided'")
+  }
+  
+  # 构建列联表(书上的表格，看出合并前后的情况)
+  conting.table <- matrix(c(A, m - A, m, 
+                            t - A, n - (t - A), n,
+                            t, N - t, N), 
+                          nrow = 3, ncol = 3, byrow = TRUE)
+  
+  colnames(conting.table) <- c("X", "Y", "X+Y")
+  rownames(conting.table) <- c(paste0(">Q", p), paste0("<=Q", p), "TOTAL")
+  
+  # 返回结果
+  list(contingency.table = conting.table,
+       p.value = p.value,
+       quantile = p,
+       quantile.value = qp.xy,
+       statistic = A,
+       alternative = alt)
+}
+```
+
+调用示例
+
+```{r}
+A<-c(10,8,12,16,5,9,7,11,6)
+B<-c(12,15,20,18,13,14,9,16)
+BM.test(A,B,alt="less",p=0.5)
+BM.test(A,B,alt="less",p=0.25)
+BM.test(A,B,alt="less",p=0.75)
+```
+
+#Wilcoxon-Mann-Whitney检验
+
+原假设，两组数据不存在显著差异，即$\mu_1=\mu_2$
+
+```{r}
+# 输入数据
+trained <- c(18, 15, 9, 10, 14, 16, 11, 13, 19, 20, 6)
+control <- c(12, 13, 9, 8, 1, 2, 7, 5, 3, 2, 4)
+
+# 执行Wilcoxon秩和检验（单侧，训练组 > 控制组）
+result <- wilcox.test(trained, control, 
+                      alternative = "greater",
+                      exact = TRUE,  # 精确计算p值
+                      correct = TRUE) # 使用连续性校正
+
+# 显示结果
+print(result)
+
+```
+
+#置换检验
+
+##配对两样本置换检验(校对)
+```{r}
+school<-c(82,69,73,43,58,56,76,65)
+home<-c(63,42,74,37,51,43,80,62)
+#实现置换检验的代码如下
+d<-school-home#构造数据的差
+dpm<-c(d,-d)#构造正负样本，用于后续抽样
+n<-length(d)
+B=500
+dbs<-matrix(sample(dpm,n*B,replace<-TRUE),ncol=n)#随机抽取n*B个样本，确保了符号随机，切分成B行，也就是B组长度为n的样本
+wilcox.teststat<-function(x)wilcox.test(x)$statistic#提取Wilcoxon统计量的函数
+bs.teststat<-apply(dbs,1,wilcox.teststat)#逐行提取Wilcoxon统计量
+mean(bs.teststat>wilcox.teststat(dpm))
+
+# 数据
+lengths <- rep(c(64,65,66,67,68,69,70,71,72,73,74,75,77,78,83),
+               c(1, 2, 1, 1, 4, 3, 4, 5, 3, 3, 0, 1, 6, 1, 1))
+
+# 样本中位数
+median_sample <- median(lengths)
+cat("样本中位数 =", median_sample, "\n")
+```
+
+##置换检验Bootstrap
+```{r}
+#零假设是来自=同一分布，这里写作是均值相等，检验统计量就是abs(\bat{X}-bar{Y})
+#计算检验统计量的观测值t_0=T(X_1,....,X_n1,Y_1,...,Y_n2)
+#随机置换数据，用置换数据计算检验统计量B次，令T_1,...,T_n表示置换样本后的T的观测
+#近似的p值为：
+
+#p\approx=1/B\sum_{j=1}^{B}I(T_j>t_0)
+
+## ----------------------------------------------------------
+## 置换检验（Permutation Test / Bootstrap Approximation）
+## ----------------------------------------------------------
+
+set.seed(123)
+
+# 示例数据
+X <- c(82, 69, 73, 43, 58, 56, 76, 65)
+Y <- c(63, 42, 74, 37, 51, 43, 80, 62)
+
+# 检验统计量 T = |mean(X) - mean(Y)|
+T_stat <- function(x, y) abs(mean(x) - mean(y))
+
+# 观测统计量 t0
+t0 <- T_stat(X, Y)
+
+# 置换次数
+B <- 5000
+
+# 合并样本
+Z <- c(X, Y)
+n1 <- length(X)
+n2 <- length(Y)
+
+# 保存置换统计量
+T_perm <- numeric(B)
+
+for (b in 1:B) {
+  # 随机重排
+  idx <- sample(length(Z))#随机生成一组排列，切分后按照排列索引
+  Xb <- Z[idx[1:n1]]
+  Yb <- Z[idx[(n1+1):(n1+n2)]]
+  
+  T_perm[b] <- T_stat(Xb, Yb)
+}
+
+# Monte Carlo p-value
+p_perm <- mean(T_perm >= t0)
+
+cat("Permutation Approximation p-value =", p_perm, "\n")
+
+
+
+```
+```{r}
+# 1. 定义你的统计量函数（保持原样）
+T_stat <- function(x, y) {
+  wilcox.test(x - y)$statistic
+}
+
+# 2. 观测统计量
+t0 <- T_stat(X, Y)
+
+# 3. 置换次数
+B <- 5000
+
+# 4. 保存置换统计量
+T_perm <- numeric(B)
+
+# 5. 配对置换循环
+for (b in 1:B) {
+  # 为每对随机决定是否交换
+  swap <- sample(c(TRUE, FALSE), size = n, replace = TRUE)
+  
+  Xb <- X
+  Yb <- Y
+  
+  # 交换那些被选中的配对
+  Xb[swap] <- Y[swap]
+  Yb[swap] <- X[swap]
+  #假如来自同一分布，随机交换，正秩和增加多少的概率和减少多少的概率近似是一样的
+  
+  # 计算统计量
+  T_perm[b] <- T_stat(Xb, Yb)
+}
+
+# 6. 计算p值
+# 双边检验：统计量的绝对值大于等于观测值的比例
+p_value <- mean(abs(T_perm) >= abs(t0))
+
+# 或者如果你想保持原来的比较方向：
+# p_value <- mean(T_perm >= t0)
+
+cat("配对置换检验 p-value =", p_value, "\n")
+
+```
+
+
+##当样本量不大时，直接计算(n1+n2)!种可能组合
+```{r}
+#p=P_p(T>t_0)=1/N!\sum_{j=1}^{N!}I(T_j>t0)
+
+## ----------------------------------------------------------
+## 全排列 Exact Permutation Test（小样本专用）
+## ----------------------------------------------------------
+
+# 示例数据（建议小样本，例如4 vs 3）
+X <- c(5, 7, 6)
+Y <- c(1, 3, 2)
+
+T_stat <- function(x, y) abs(mean(x) - mean(y))
+
+t0 <- T_stat(X, Y)
+
+Z <- c(X, Y)
+n1 <- length(X)
+n <- length(Z)
+
+# 生成所有 C(n, n1) 组合：选哪些作为 X
+all_idx <- combn(n, n1)
+
+# 对每一种组合计算 T
+T_all <- apply(all_idx, 2, function(idx) {
+  Xb <- Z[idx]
+  Yb <- Z[-idx]
+  T_stat(Xb, Yb)
+})
+
+# 精确 p-value
+p_exact <- mean(T_all >= t0)
+
+cat("Exact Permutation p-value =", p_exact, "\n")
+```
+

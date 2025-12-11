@@ -1,0 +1,884 @@
+---
+title: "第二单元调用接口"
+author: "柴王珩 2023201563"
+date: "2025-10-16"
+
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+    keep_tex: true       # 保留中间的 .tex 文件方便调试
+    fig_crop: false       # 关闭 pdfcrop，防止中文路径报错
+    toc: false            # （可选）是否要目录，可改为 true
+
+fontsize: 12pt
+mainfont: "Times New Roman"
+CJKmainfont: "SimSun"     # 宋体，Windows 默认有
+geometry: margin=1in      # 页面边距
+always_allow_html: true   # 防止 markdown 渲染出错
+
+header-includes:
+  - \usepackage{fvextra}
+  - \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+  - \fvset{breakanywhere=true}
+  - \usepackage{xeCJK}
+  - \usepackage{amsmath,amssymb}
+  - \setlength{\parindent}{2em}  # 首行缩进
+---
+
+此文件包含了作业出现过题目但书中没有具体求解的方法代码实现，书本中出现的所有检验的调用接口，并给出简单的调用说明，R打开后在右侧的outline快速查找对应接口
+
+#t检验
+
+```{r}
+data<-c(1,2,3,3,4,5,6,7)
+
+mean(data)
+
+var(data)
+
+sd(data)
+
+length(data)
+
+t.test(data)
+```
+
+#符号检验
+
+```{r}
+#假设中位数为37
+
+data<-c(1,2,3,4,4,6,7,87,8)
+
+binom.test(sum(data<37),length(data),0.5)
+```
+
+
+
+#分位数检验(符号检验推广)
+
+双尾检验：$H_0: M_p = M_{p_0} \leftrightarrow H_1: M_p \neq M_{p_0}$
+
+
+```{r}
+# 双尾分位数检验
+quantile_test_two_sided <- function(data, p0, M_p0, alpha = 0.05) {
+  n <- length(data)
+  S_minus <- sum(data <= M_p0)  # 小于等于假设分位数的观测数
+  S_plus <- sum(data >= M_p0)   # 大于等于假设分位数的观测数
+  
+  if (p0 > 0.5) {
+    # p0 > 0.5 时的检验
+    p_value <- pbinom(S_minus, n, p0) + pbinom(S_plus, n, 1 - p0)
+  } else {
+    # p0 < 0.5 时的检验
+    p_value <- pbinom(S_plus, n, 1 - p0) + pbinom(S_minus, n, p0)
+  }
+  
+  result <- list(
+    statistic = S_minus,
+    p_value = p_value,
+    alternative = "two.sided",
+    null_value = M_p0,
+    p0 = p0
+  )
+  
+  return(result)
+}
+
+# 示例数据
+data <- c(1, 2, 3, 4, 4, 6, 7, 8, 87)
+
+# 情况1：检验第0.75分位数是否等于20（双尾检验）
+result1 <- quantile_test_two_sided(data, p0 = 0.75, M_p0 = 20)
+print(result1)
+
+```
+
+
+右尾检验：$H_0: M_p \leq M_{p_0} \leftrightarrow H_1: M_p > M_{p_0}$
+
+```{r}
+# 右尾分位数检验
+quantile_test_right <- function(data, p0, M_p0, alpha = 0.05) {
+  n <- length(data)
+  S_minus <- sum(data <= M_p0)  # 小于等于假设分位数的观测数
+  
+  p_value <- pbinom(S_minus, n, p0)
+  
+  result <- list(
+    statistic = S_minus,
+    p_value = p_value,
+    alternative = "greater",
+    null_value = M_p0,
+    p0 = p0
+  )
+  
+  return(result)
+}
+
+#调用示例
+data <- c(1, 2, 3, 4, 4, 6, 7, 8, 87)
+
+# 情况1：检验第0.75分位数是否小于等于20（双尾检验）
+result1 <- quantile_test_right(data, p0 = 0.75, M_p0 = 20)
+print(result1)
+
+```
+
+
+左尾检验：$H_0: M_p \geq M_{p_0} \leftrightarrow H_1: M_p < M_{p_0}$
+
+```{r}
+# 左尾分位数检验
+quantile_test_left <- function(data, p0, M_p0, alpha = 0.05) {
+  n <- length(data)
+  S_plus <- sum(data >= M_p0)   # 大于等于假设分位数的观测数
+  
+  p_value <- pbinom(S_plus, n, 1 - p0)
+  
+  result <- list(
+    statistic = S_plus,
+    p_value = p_value,
+    alternative = "less",
+    null_value = M_p0,
+    p0 = p0
+  )
+  
+  return(result)
+}
+
+#调用示例
+#调用示例
+data <- c(1, 2, 3, 4, 4, 6, 7, 8, 87)
+
+# 情况1：检验第0.75分位数是否大于等于20（双尾检验）
+result1 <- quantile_test_left(data, p0 = 0.75, M_p0 = 20)
+print(result1)
+
+```
+
+#cox-stuart存在趋势检验
+
+总函数如下：
+```{r}
+cox_stuart_test <- function(data, stat_type = "S2", alternative = "two.sided") {
+  N <- length(data)
+  
+  if(stat_type == "S1") {
+    k <- floor(N/2)
+    sign_diff <- numeric(k)
+    for(i in 1:k) {
+      sign_diff[i] <- sign(data[i] - data[N-i+1])
+    }
+    w <- N - 2*(1:k) + 1
+    S <- sum(w * (sign_diff > 0))
+    ES <- N^2/8
+    DS <- N*(N^2-1)/24
+    
+    # 大样本 z 值
+    z <- (S - ES)/sqrt(DS)
+    
+    if(alternative == "two.sided") {
+      p_value <- 2 * (1 - pnorm(abs(z)))
+    } else if(alternative == "greater") {
+      p_value <- pnorm(z)
+    } else if(alternative == "less") {
+      p_value <- 1 - pnorm(z)
+    }
+    
+    return(list(statistic = S, z_value = z, p_value = p_value))
+  }
+  
+  ### ----------- S2 和 S3 分支（精确 p-value） --------------------
+  else if(stat_type == "S2") {
+    k <- floor(N/2)
+    sign_diff <- numeric(k)
+    for(i in 1:k) {
+      sign_diff[i] <- sign(data[i] - data[i + k])
+    }
+    S <- sum(sign_diff > 0)
+    m <- k   # 伯努利试验次数
+    
+  } else if(stat_type == "S3") {
+    m <- floor(N/3)
+    u <- floor(2*N/3)
+    sign_diff <- numeric(m)
+    for(i in 1:m) {
+      sign_diff[i] <- sign(data[i] - data[i + u])
+    }
+    S <- sum(sign_diff > 0)
+  }
+  
+  ### -------- 计算精确 p-value：S ~ Binomial(m, 0.5) --------
+  if(alternative == "two.sided") {
+    # 双尾：两侧概率
+    p_value <- 2 * min(pbinom(S, m, 0.5), 1 - pbinom(S - 1, m, 0.5))
+  } else if(alternative == "greater") {
+    # 上升趋势：左尾
+    p_value <- pbinom(S, m, 0.5)
+  } else if(alternative == "less") {
+    # 下降趋势：右尾
+    p_value <- 1 - pbinom(S - 1, m, 0.5)
+  }
+  
+  return(list(statistic = S, p_value = p_value))
+}
+
+
+
+y <- c(17.3, 17.9, 18.4, 18.1, 18.3, 19.6, 18.6, 19.2, 17.7, 
+       20.0, 19.0, 18.8, 19.3, 20.2, 19.9)
+
+res1 <- cox_stuart_test(y, stat_type = "S1", alternative = "greater")
+res2 <- cox_stuart_test(y, stat_type = "S2", alternative = "greater")
+res3 <- cox_stuart_test(y, stat_type = "S3", alternative = "greater")
+
+
+
+res1
+res2
+res3
+```
+
+##要求正态的第一种S1
+```{r}
+# H0: 无下降趋势 vs H1: 有下降趋势  
+result_S1_down <- cox_stuart_test(rainfall_data, "S1", "less")
+```
+
+##切一半的第二种S2
+```{r}
+result_S2_down <- cox_stuart_test(rainfall_data, "S2", "less")
+
+```
+##切去中间1/3的第三种S3
+```{r}
+# H0: 无上升趋势 vs H1: 有上升趋势
+result_S3_up <- cox_stuart_test(rainfall_data, "S3", "greater")
+```
+
+#随机游程检验
+
+##常规游程检验
+调用现有程序包
+```{r}
+library(tseries)
+cusq<-c(1,1,0,0,0,1,1,0,0,0,1,1,0,1)
+runs.test(cusq)
+```
+
+##三类及多游程检验
+```{r}
+# 多类游程检验函数
+multi_runs_test <- function(x) {
+  # 转换输入为字符向量以便处理多类别
+  x <- as.character(x)
+  n <- length(x)
+  
+  # 计算各类别的频数和比例
+  categories <- unique(x)
+  k <- length(categories)
+  ni <- table(x)
+  pi <- ni / n
+  
+  cat("序列:", paste(x, collapse = ","), "\n")
+  cat("序列长度 n =", n, "\n")
+  cat("类别数 k =", k, "\n")
+  cat("各类别频数:", paste(paste0(names(ni), ":", ni), collapse = ", "), "\n")
+  cat("各类别比例:", paste(paste0(names(pi), ":", round(pi, 4)), collapse = ", "), "\n\n")
+  
+  # 计算游程数
+  runs <- 1
+  for (i in 2:n) {
+    if (x[i] != x[i-1]) {
+      runs <- runs + 1
+    }
+  }
+  
+  cat("实际游程数 R =", runs, "\n")
+  
+  # 计算期望游程数
+  E_R <- n * (1 - sum(pi^2)) + 1
+  cat("期望游程数 E(R) =", round(E_R, 4), "\n")
+  
+  # 计算游程数方差
+  var_R <- n * (sum(pi^2 - 2 * pi^3) + sum(pi^2)^2)
+  cat("游程数方差 Var(R) =", round(var_R, 4), "\n")
+  
+  # 计算检验统计量 Z
+  Z <- (runs - E_R) / sqrt(var_R)
+  cat("检验统计量 Z =", round(Z, 4), "\n")
+  
+  # 计算p值（双侧检验）
+  p_value <- 2 * pnorm(-abs(Z))
+  cat("P值 =", round(p_value, 4), "\n\n")
+  
+  # 检验结论
+  alpha <- 0.05
+  if (p_value < alpha) {
+    cat("结论: 在显著性水平", alpha, "下，拒绝原假设，序列不是随机的。\n")
+  } else {
+    cat("结论: 在显著性水平", alpha, "下，不能拒绝原假设，序列是随机的。\n")
+  }
+  
+  # 返回结果列表
+  return(list(
+    sequence = x,
+    n = n,
+    k = k,
+    categories = categories,
+    frequencies = ni,
+    proportions = pi,
+    runs_observed = runs,
+    runs_expected = E_R,
+    variance = var_R,
+    Z_statistic = Z,
+    p_value = p_value
+  ))
+}
+
+# 示例使用
+# 示例1：三类数据（赢=W, 输=L, 平=D）
+cat("=== 示例1：足球比赛结果（三类） ===\n")
+football <- c("W", "W", "L", "D", "L", "W", "D", "D", "W", "L", "L", "L", "W", "D")
+result1 <- multi_runs_test(football)
+
+cat("\n" + rep("=", 50) + "\n\n")
+```
+##随机游程的妙用
+
+随机游程可以作为一种辅助方式，检验A样本与B样本各自是否是随机混合的，但一般不作为检验两种效率差异的方式，主要采取Wilcoxon秩和检验,若使用随机游程检验，可以将两组数据混合，按照数值大小排序后用0,1区分标签，观察是否是随机出现的(order的用法)
+
+```{r}
+library(tseries)
+
+A <- c(92,69,72,40,90,53,85,87,89,88)
+B <- c(78,95,58,65,39,67,64,75,60,80,83,96)
+
+data <- c(A, B)
+group <- c(rep("A", length(A)), rep("B", length(B)))
+order <- order(data)  #返回从小到大排列时的索引顺序
+
+t<-as.numeric(group[order]) #按照索引找出这个数据源自于哪个样本，得到按照样本的排序
+#检验是否随机交错
+runs.test(t)
+```
+
+#Wilcoxon符号秩检验
+
+常规调用示例
+```{r}
+data<-c(310,350,370,377,389,400,415,425,440,295,325,296,250,340,298,365,375,360,385)
+
+#检验中位数是不是320
+wilcox.test(data-320)
+```
+
+#Walsh平均(HL估计量)
+利用追加向量的append方式构造walsh平均，一定注意循环的范围！！！报了错先看循环范围对不对
+
+```{r}
+a<-c(62,70,74,75,77,80,83,85,88)
+
+walsh<-NULL
+for (i in 1:(length(a)-1)){
+  for (j in (i+1):length(a)){
+    walsh<-c(walsh,(a[i]+a[j])/2)
+  }
+}
+walsh<-c(walsh,a)
+NW=length(walsh)
+median(walsh)#HL估计量
+```
+
+双样本Wilcoxon检验调用第三单元检验函数
+
+#估计量稳健性评价
+
+HL效率的计算
+
+思路，所有的点都是好点构造的均值的数量大于所有的点都是坏点构造的均值数量，假设好点数量为m，总的点数为n
+
+$$
+\frac{m(m+1)}{2}=\frac{n(n+1)-m(m+1)}{2}
+$$
+大样本近似得到$\frac{m}{n}\approx\frac{m+1}{n+1}$，解得$\frac{m}{n}\approx 0.71$
+效率是坏点比上好点，效率约等于0.29
+
+#分位数构造置信区间
+
+寻找对应的对称分位数置信区间
+
+```{r}
+data<-c(1,2,3,4,5,6,7,8,9,10)
+alpha<-0.05
+n<-length(data)
+for (k in 1:n)
+{
+  conf=pbinom(n-k,n,0.5)-pbinom(k,n,0.5)
+  if (conf<1-alpha){loc<-k-1;break}
+  print(loc)
+}
+```
+
+#Bootstrap构造置信区间
+
+##基础：方差估计的Bootstrap方法
+
+```{r}
+X<-c(1,2,3,4,5,6,7,8,9,10)
+Median.nerve<-median(X)
+Tboot<-NULL
+n=20
+B=1000
+SD.nerve=NULL
+for (i in 1:B)
+  {
+  Xsample<-sample(X,n,TRUE)
+  TBoot=median(Xsample)
+  Tboot=c(Tboot,TBoot)
+  SD.nerve=c(SD.nerve,sd(Tboot))#存储好画图用
+}
+Sd.median.nerve=sd(Tboot)#中位数估计值的标准差(抽样标准差)
+plot(1:B,SD.nerve,col=4)
+hist(Tboot,col=3)
+
+```
+
+##正态置信区间
+直接用原始样本的median作为均值的估计，加减分位数乘标准差(重抽样估计的方差)
+```{r}
+alpha=0.05
+Lc1=Median.nerve+qnorm(0.025,0,1)*Sd.median.nerve
+Uc1=Median.nerve-qnorm(0.025,0,1)*Sd.median.nerve
+
+```
+
+##枢轴量置信区间
+
+```{r}
+Lc2=2*Median.nerve-quantile(Tboot,0.975)
+Uc2=2*Median.nerve-quantile(Tboot,0.025)
+```
+
+##分位数置信区间
+```{r}
+Lc3=quantile(Tboot,0.025)
+Uc3=quantile(Tboot,0.975)
+```
+
+#正态计分检验(自制函数)
+
+```{r}
+# 定义函数
+normal_score_test <- function(x, m0, alternative = "two.sided") {
+  n <- length(x)
+  d <- x - m0
+  abs_d <- abs(d)
+  r <- rank(abs_d)  # 绝对值秩
+  sign_d <- sign(d)
+  
+  # 计算正态记分 (无符号)
+  s_plus <- qnorm(0.5 * (1 + r / (n + 1)))
+  
+  # 带符号的正态记分
+  s_signed <- s_plus * sign_d
+  
+  # 检验统计量
+  W <- sum(s_signed)
+  sum_s2 <- sum(s_plus^2)  # 或者 sum(s_signed^2)，结果一样
+  T_plus <- W / sqrt(sum_s2)
+  
+  # p值计算
+  if (alternative == "two.sided") {
+    p_value <- 2 * pnorm(-abs(T_plus))
+  } else if (alternative == "less") {
+    p_value <- pnorm(T_plus)
+  } else if (alternative == "greater") {
+    p_value <- pnorm(T_plus, lower.tail = FALSE)
+  }
+  
+  # 返回结果
+  list(
+    statistic = T_plus,
+    p.value = p_value,
+    W = W,
+    signed_scores = s_signed,
+    method = "Normal Score Test (One Sample)"
+  )
+}
+
+# 使用示例中的数据测试
+x <- c(33, 36, 31, 15, 9, 6, 4, 65, 77, 88)
+
+# 检验 H0: M >= 34 vs H1: M < 34
+result1 <- normal_score_test(x, m0 = 34, alternative = "less")
+print(result1)
+
+# 检验 H0: M <= 16 vs H1: M > 16  
+result2 <- normal_score_test(x, m0 = 16, alternative = "greater")
+print(result2)
+```
+
+#采用walsh平均的方法
+
+#卡方拟合优度检验
+
+##分好组的怎么调用
+```{r}
+#输入数据,长度不一定确定，给一个length增强可复用性
+obs <- c(10, 12, 8, 15, 5)    # 观测频数
+p0  <- rep(1/5, 5)             # 理论分布（这里假设均匀）
+chisq.test(x = obs, p = p0)  #自由度自动是length(obs)-1
+
+#如果p0给的是频数
+#p<-p/sum(p)
+```
+
+```{r}
+#列联表
+tbl <- matrix(c(12, 8, 20, 10), nrow = 2)
+chisq.test(tbl)
+
+```
+
+##没分好组的分布怎么切分，有没有现成的函数，比如说假设服从泊松,服从正态
+
+泊松分布检验
+```{r}
+data <- c(0, 1, 1, 2, 2, 2, 3, 4, 5, 5)  # 样本数据（整数）
+
+# 1. 估计泊松参数λ（如果未知）
+lambda_hat <- mean(data)
+
+# 2. 构造观测频数
+obs <- table(data)
+#0有1个，1有2个，2有3个，3有1个，4有1个，5有2个
+
+# 3. 计算理论概率
+k_vals <- as.numeric(names(obs))           # 各个取值
+p_theory <- dpois(k_vals, lambda = lambda_hat)  # 理论概率
+
+# 4. 若分布右尾概率未包含全部概率（比如最大值太小），补合并尾部
+p_theory <- p_theory / sum(p_theory)  # 概率标准化
+
+# 5. 卡方拟合优度检验
+chisq.test(x = obs, p = p_theory)
+```
+
+```{r}
+# 连续分布卡方检验函数
+continuous_chi_square_test <- function(data, dist_fun, params, 
+                                      breaks = NULL, n_bins = NULL, 
+                                      min_expected = 5) {
+  
+  n <- length(data)
+  
+  # 确定分组边界
+  if(is.null(breaks)) {
+    if(is.null(n_bins)) {
+      n_bins <- max(5, min(10, n/20))  # 自动确定分组数
+    }
+    breaks <- seq(min(data), max(data), length.out = n_bins + 1)
+  } else {
+    n_bins <- length(breaks) - 1
+  }
+  
+  # 计算观测频数
+  obs_freq <- table(cut(data, breaks, include.lowest = TRUE))
+  obs <- as.numeric(obs_freq)
+  
+  # 计算理论概率
+  theoretical_prob <- numeric(n_bins)
+  for(i in 1:n_bins) {
+    theoretical_prob[i] <- dist_fun(breaks[i+1], params) - dist_fun(breaks[i], params)
+  }
+  
+  # 确保概率和为1（处理数值误差）
+  theoretical_prob <- theoretical_prob / sum(theoretical_prob)
+  
+  # 计算理论频数
+  expected <- theoretical_prob * n
+  
+  # 合并小期望频数组（确保每个组期望频数>=5）
+  i <- 1
+  while(i <= length(obs)) {
+    if(expected[i] < min_expected) {
+      # 合并到下一组
+      if(i < length(obs)) {
+        obs[i] <- obs[i] + obs[i+1]
+        expected[i] <- expected[i] + expected[i+1]
+        obs <- obs[-(i+1)]
+        expected <- expected[-(i+1)]
+        breaks <- breaks[-(i+1)]
+        n_bins <- n_bins - 1
+      } else {
+        # 最后一组合并到前一组
+        obs[i-1] <- obs[i-1] + obs[i]
+        expected[i-1] <- expected[i-1] + expected[i]
+        obs <- obs[-i]
+        expected <- expected[-i]
+        breaks <- breaks[-(i+1)]
+        n_bins <- n_bins - 1
+      }
+    } else {
+      i <- i + 1
+    }
+  }
+  
+  # 执行卡方检验
+  result <- chisq.test(obs, p = expected/sum(expected))
+  
+  # 输出详细结果
+  cat("连续分布卡方拟合优度检验\n")
+  cat("分组数:", n_bins, "\n")
+  cat("卡方统计量:", round(result$statistic, 4), "\n")
+  cat("自由度:", n_bins - 1 - length(params), "\n")  # 注意：自由度需要减去估计的参数个数
+  cat("P值:", round(result$p.value, 4), "\n")
+  
+  # 显示分组情况
+  cat("\n分组详情:\n")
+  df_detail <- data.frame(
+    区间 = levels(cut(data, breaks, include.lowest = TRUE))[1:n_bins],
+    观测频数 = obs,
+    理论频数 = round(expected, 2)
+  )
+  print(df_detail)
+  
+  return(list(
+    statistic = result$statistic,
+    p.value = result$p.value,
+    parameter = n_bins - 1 - length(params),
+    observed = obs,
+    expected = expected,
+    breaks = breaks
+  ))
+}
+
+```
+
+调用示例
+```{r}
+set.seed(1)
+data2 <- rexp(300, rate = 2)
+
+2
+exp_cdf <- function(x, params) {
+  lambda <- params[1]
+  pexp(x, rate = lambda)
+}
+
+continuous_chi_square_test(
+  data = data2,
+  dist_fun = exp_cdf,
+  params = c(2),   # 已知 lambda=2
+  n_bins = 10
+)
+
+```
+
+```{r}
+# 正态分布检验
+normal_chi_square_test <- function(data, mean = NULL, sd = NULL, ...) {
+  if(is.null(mean)) mean <- mean(data)
+  if(is.null(sd)) sd <- sd(data)
+  
+  # 定义正态分布函数
+  norm_fun <- function(x, params) {
+    pnorm(x, mean = params$mean, sd = params$sd)
+  }
+  
+  params_list <- list(mean = mean, sd = sd)
+  
+  result <- continuous_chi_square_test(data, norm_fun, params_list, ...)
+  
+  cat("\n正态分布参数:\n")
+  cat("均值:", round(mean, 4), "\n")
+  cat("标准差:", round(sd, 4), "\n")
+  
+  return(result)
+}
+
+# 泊松分布检验
+poisson_chi_square_test <- function(data, lambda = NULL, ...) {
+  if(is.null(lambda)) lambda <- mean(data)
+  
+  # 泊松分布是离散的，但我们可以用连续近似
+  poisson_fun <- function(x, params) {
+    ppois(floor(x), lambda = params$lambda)  # 取整处理
+  }
+  
+  params_list <- list(lambda = lambda)
+  
+  result <- continuous_chi_square_test(data, poisson_fun, params_list, ...)
+  
+  cat("\n泊松分布参数:\n")
+  cat("lambda:", round(lambda, 4), "\n")
+  
+  return(result)
+}
+
+# 指数分布检验
+exponential_chi_square_test <- function(data, rate = NULL, ...) {
+  if(is.null(rate)) rate <- 1/mean(data)
+  
+  exp_fun <- function(x, params) {
+    pexp(x, rate = params$rate)
+  }
+  
+  params_list <- list(rate = rate)
+  
+  result <- continuous_chi_square_test(data, exp_fun, params_list, ...)
+  
+  cat("\n指数分布参数:\n")
+  cat("rate:", round(rate, 4), "\n")
+  
+  return(result)
+}
+```
+
+
+```{r}
+# 生成测试数据
+set.seed(123)
+
+# 正态分布数据
+normal_data <- rnorm(200, mean = 10, sd = 2)
+
+# 泊松分布数据（离散但连续化处理）
+poisson_data <- rpois(150, lambda = 5) + runif(150, -0.5, 0.5)  # 添加噪声使其连续
+
+# 指数分布数据
+exp_data <- rexp(180, rate = 0.5)
+
+# 示例1: 正态分布检验
+cat("=== 正态分布检验 ===\n")
+result_norm <- normal_chi_square_test(normal_data)
+```
+##正态分布的一致性检验
+
+```{r}
+# Shapiro-Wilk 检验（推荐小样本）
+shapiro.test(data)
+
+# Kolmogorov-Smirnov 检验（样本大时）
+ks.test(data, "pnorm", mean(data), sd(data))
+
+# Anderson-Darling 检验（更敏感）
+library(nortest)
+ad.test(data)
+
+```
+
+#KS检验
+
+```{r}
+data=c(1,2,3,4,5,6,7,8)
+
+# 正态性检验
+ks.test(data, "pnorm", mean=0, sd=1)
+
+# 泊松分布检验
+ks.test(data, "ppois", lambda = mean(data))
+
+#均匀分布
+ks.test(data, "punif", min=0, max=1)
+
+#t分布
+
+ks.test(data, "pt", df=5)
+
+#卡方
+
+ks.test(data, "pchisq", df=3)
+
+#F分布
+
+ks.test(data, "pf", df1=3, df2=5)
+
+#对数正态
+
+ks.test(data, "plnorm", meanlog=0, sdlog=1)
+
+#泊松(推荐使用卡方)
+```
+
+#bootstrap估计中位数的置信区间(习题2.13)(一般化)
+
+```{r}
+# 数据
+lengths <- rep(c(64,65,66,67,68,69,70,71,72,73,74,75,77,78,83),
+               c(1, 2, 1, 1, 4, 3, 4, 5, 3, 3, 0, 1, 6, 1, 1))
+
+# 样本中位数
+median_sample <- median(lengths)
+cat("样本中位数 =", median_sample, "\n")
+
+
+# Bootstrap 置信区间
+set.seed(123)
+n <- length(lengths)
+B <- 10000
+boot_medians <- replicate(B, median(sample(lengths, n, replace = TRUE)))
+CI_boot <- quantile(boot_medians, c(0.025, 0.975))
+cat("Bootstrap 95% CI for median: [", CI_boot[1], ",", CI_boot[2], "]\n")
+
+# 判断
+if (CI_boot[1] >= 69 && CI_boot[2] <= 72) {
+  cat("结论：数据支持中位数总是在 69~72 cm 之间。\n")
+} else {
+  cat("结论：数据不支持中位数总是在 69~72 cm 之间。\n")
+}
+
+```
+
+#作业题2.11需要重新搞清楚
+
+#2.16可以作为Bootsstrap的范例
+
+```{r}
+set.seed(123)
+ n <-30
+ 9
+Nsim <-10000
+alphas<-c(0.1, 0.05,0.01)
+simulate_wilcoxon<-function(alpha,n,Nsim){
+ count<-0
+ for(i in 1:Nsim){
+ x<-rnorm(n, 0, 1)
+ pval<-wilcox.test(x, mu= 0)$p.value
+ if(pval<alpha)count<-count+1
+ }
+ alpha_hat<-count/Nsim
+ #95%置信区间
+ci <-binom.test(count,Nsim, conf.level= 0.95)$conf.int
+return(list(
+ alpha= alpha,
+ alpha_hat= alpha_hat,
+ ci_lower= ci[1],
+ ci_upper= ci[2]
+ ))
+ }
+results<-lapply(alphas,simulate_wilcoxon, n= n, Nsim= Nsim)
+df <-data.frame(
+ alpha=sapply(results,function(x)x$alpha),
+ alpha_hat=sapply(results,function(x)round(x$alpha_hat,4)),
+ ci_lower=sapply(results,function(x)round(x$ci_lower,4)),
+ ci_upper=sapply(results,function(x)round(x$ci_upper,4))
+ )
+print(df)
+
+```
+
+#Lilliefor正态分布检验
+
+#补充1：常见的检验的调用
+
+#补充2：常见的分布的调用
+
+#补充3：从常见分布中抽样的方法
+
+#补充4：常见的检验的调用
+
+#补充5：制表和数据框的导入
