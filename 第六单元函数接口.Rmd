@@ -1,0 +1,514 @@
+---
+title: "第六单元函数调用接口"
+author: "柴王珩 2023201563"
+date: "2025-12-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#pearson相关系数
+```{r}
+X<-c(7.33,10.80,15.60,8.86,9.70,18.52,17.71,21.24,23.20,14.24,13.82,17.97,10.00,10.15,17.05,10.94,20.97,16.40,16.59,17.40,14.12,18.99,30.18,28.48,61.13,21.00,32.88,42.14,25.02,14.65)
+Y<-c(15044,12270,5345,7730,22275,8447,9455,8136,6834,9513,4081,5500,5163,4220,4259,6468,3881,3715,4032,5122,4130,3763,2093,3715,2732,3313,2901,3748,3731,5167)
+cor.test(X,Y,method ="pearson")
+```
+
+#Spearman秩相关系数
+```{r}
+X<-c(7.33,10.80,15.60,8.86,9.70,18.52,17.71,21.24,23.20,14.24,13.82,17.97,10.00,10.15,17.05,10.94,20.97,16.40,16.59,17.40,14.12,18.99,30.18,28.48,61.13,21.00,32.88,42.14,25.02,14.65)
+Y<-c(15044,12270,5345,7730,22275,8447,9455,8136,6834,9513,4081,5500,5163,4220,4259,6468,3881,3715,4032,5122,4130,3763,2093,3715,2732,3313,2901,3748,3731,5167)
+cor.test(X,Y,method ="spearman")
+```
+
+#kendall相关检验
+```{r}
+X<-c(7.33,10.80,15.60,8.86,9.70,18.52,17.71,21.24,23.20,14.24,13.82,17.97,10.00,10.15,17.05,10.94,20.97,16.40,16.59,17.40,14.12,18.99,30.18,28.48,61.13,21.00,32.88,42.14,25.02,14.65)
+Y<-c(15044,12270,5345,7730,22275,8447,9455,8136,6834,9513,4081,5500,5163,4220,4259,6468,3881,3715,4032,5122,4130,3763,2093,3715,2732,3313,2901,3748,3731,5167)
+cor.test(X,Y,method="kendall")
+```
+
+#kendall协和相关系数检验
+
+```{r}
+# kendallW: 计算 Kendall W 与修正后的 Wc（考虑结），并给出检验结果
+# 输入: mat - 数值矩阵或数据框 (n 行 k 列)
+# 输出: list(W, Wc, chi2, df, p.value, details)
+kendallW <- function(mat) {
+  mat <- as.matrix(mat)
+  n <- nrow(mat)
+  k <- ncol(mat)
+  if (n < 2 || k < 2) stop("需要至少 n>=2, k>=2")
+  
+  # 对每列做秩（平均秩法）
+  ranks <- apply(mat, 2, rank, ties.method = "average")
+  
+  # 行秩和 R_i.
+  R_row <- rowSums(ranks)
+  sumR2 <- sum(R_row^2)
+  
+  # 常规公式的分子
+  num <- 12 * sumR2 - 3 * k^2 * n * (n + 1)^2
+  
+  # 未修正的分母
+  denom0 <- k^2 * (n^3 - n)
+  
+  # 结的修正项：对每列统计 tie lengths t，累加 (t^3 - t)
+  tie_sum <- 0
+  for (j in seq_len(k)) {
+    # 注意：这里用原始观测值的并列值来判断 tie；也可以基于秩判断（等价）
+    tbl <- table(mat[, j])
+    ties <- as.integer(tbl[tbl > 1])
+    if (length(ties) > 0) {
+      tie_sum <- tie_sum + sum(ties^3 - ties)
+    }
+  }
+  # 或者基于秩也可（与上面等价）：
+  # tie_sum <- 0
+  # for (j in seq_len(k)) {
+  #   rtab <- table(ranks[,j])
+  #   t <- as.integer(rtab[rtab>1])
+  #   if (length(t)>0) tie_sum <- tie_sum + sum(t^3 - t)
+  # }
+  
+  denom_adj <- denom0 - k * tie_sum
+  
+  W <- num / denom0
+  Wc <- num / denom_adj
+  
+  # 卡方近似检验： chi2 = k*(n-1)*W_c  自由度 df = n-1
+  df <- n - 1
+  chi2 <- k * (n - 1) * Wc
+  p.value <- pchisq(chi2, df = df, lower.tail = FALSE)
+  
+  list(W = W,
+       Wc = Wc,
+       chi2 = chi2,
+       df = df,
+       p.value = p.value,
+       details = list(n = n, k = k, tie_sum = tie_sum,
+                      numerator = num, denom0 = denom0, denom_adj = denom_adj))
+}
+
+#调用示例
+
+mat <- matrix(c(41,43,39.5,38,40.5,41,40,38.5,44,39,55.7,56.3,54.5,54.2,55.1,55.4,54.5,54.2,56.9,54.5,8.6,9.2,8,5.6,6.8,8,8.6,7.4,9.8,7.4),nrow=10)
+print(mat)
+res <- kendallW(mat)
+print(res)
+
+```
+
+#kappa一致性检验
+
+检验的基本原理，检验两种方法是否一致
+
+用r*r联表表示两组结果一致或不一致的频数
+
+$P_0=\sum_{i=1}^rp_{ii}$,r为类别频数
+
+$P_e=\sum P_{i.} P_{.i}$
+
+$\frac{P_0-P_e}{1-P_e}$
+
+K小于0.4一致性较低，K介于0.4到0.8则一致性中等，K>0.8则一致性理想，输入数据形式是频数交叉表
+
+大样本使用正态近似统计量进行检验
+$var(K)=\frac{1}{n(1-P_e)^2}[P_e+P_e^2-\sum p_{i.}p_{.i}(p_{i.}+p_{.i})]$
+
+$Z=\frac{K}{var(K)}$，如果Z大于右尾检验分位数，则保持了较好的一致性
+
+
+```{r}
+# ============================================================
+# Kappa 一致性检验（适用于 r×r 频数交叉表）
+# ============================================================
+
+kappa_test <- function(tab) {
+  tab <- as.matrix(tab)
+  if (nrow(tab) != ncol(tab)) {
+    stop("输入必须为 r×r 的频数交叉表。")
+  }
+  
+  r <- nrow(tab)
+  n <- sum(tab)
+
+  # 转换为比例表 p_ij
+  p <- tab / n
+  
+  # 行边际 & 列边际
+  p_row <- rowSums(p)
+  p_col <- colSums(p)
+  
+  # ---- Kappa 公式 ----
+  # P0 = ∑ p_ii
+  P0 <- sum(diag(p))
+  
+  # Pe = ∑ p_{i.} p_{.i}
+  Pe <- sum(p_row * p_col)
+  
+  # Kappa
+  K <- (P0 - Pe) / (1 - Pe)
+  
+  # ---- 方差 var(K) ----
+  # 公式： var(K) = [Pe + Pe^2 - Σ p_{i.} p_{.i}(p_{i.}+p_{.i})] / [ n (1-Pe)^2 ]
+  
+  tmp_sum <- sum( p_row * p_col * (p_row + p_col) )
+  varK <- ( Pe + Pe^2 - tmp_sum ) / ( n * (1 - Pe)^2 )
+  
+  # ---- Z 统计量 ----
+  Z <- K / sqrt(varK)
+  
+  # 双侧 p 值
+  p_value <- 2 * (1 - pnorm(abs(Z)))
+  
+  # 一致性判断
+  level <- if (K < 0.4) {
+    "一致性较低"
+  } else if (K <= 0.8) {
+    "一致性中等"
+  } else {
+    "一致性理想"
+  }
+  
+  list(
+    Kappa = K,
+    P0 = P0,
+    Pe = Pe,
+    varK = varK,
+    Z = Z,
+    p_value = p_value,
+    consistency_level = level,
+    n = n
+  )
+}
+
+# ============================================================
+# 使用示例
+# ============================================================
+# r×r 的频数交叉表
+tab <- matrix(c(
+  18,  2,  0,
+   4, 12,  1,
+   2,  1, 10
+), nrow = 3, byrow = TRUE)
+
+print(tab)
+kappa_test(tab)
+
+```
+
+#基于秩的稳健回归
+
+```{r}
+library(robustbase)
+
+# 数据
+data(starsCYG, package = "robustbase")
+
+#HBR回归
+library(hbrfit)
+fitHBR<-hbrfit(starsCYG$log.light~starsCYG$log.Te)
+diagplot(fitHBR)
+summary(fitHBR)
+
+#Wilcoxon得分R回归
+library(Rfit)
+fit <- rfit(
+  log.light ~ log.Te,
+  data = starsCYG,
+)
+summary(fit)
+
+# GR回归（Jaeckel散度最小化，与Mallows距离相关）
+fit_mallows <- rfit(starsCYG$log.light~starsCYG$log.Te, scores = wscores)
+
+# 查看结果摘要
+summary(fit_mallows)
+```
+
+
+
+#M估计
+产生一个可以对抗异常值干扰的估计，通常设计为稳健的目标函数，目标函数的导数和权值，对角矩阵三个要素组成。常用的M估计有Huber提出的M估计（也称广义极大似然估计），Rousseeuw提出的S估计，Yosai MM估计，Maronnal的DCML估计等
+
+#中位数回归系数估计法
+
+##Brown-Mood方法
+```{r}
+SAheart <- data.frame(
+  sbp = c(
+    160,144,118,170,134,132,142,114,114,132,
+    130,124,118,140,128,128,136,114,140,140
+  ),
+  tobacco = c(
+    12.00,0.01,0.08,7.50,13.60,6.20,4.05,0.00,0.00,0.00,
+    0.00,4.00,0.00,0.00,3.50,2.00,3.00,0.00,4.20,0.00
+  ),
+  ldl = c(
+    5.73,4.41,3.48,6.41,3.50,6.47,3.38,4.59,4.58,5.72,
+    6.00,5.80,3.80,4.40,5.90,6.20,4.90,3.30,6.10,4.20
+  ),
+  adiposity = c(
+    23.11,28.61,32.28,38.03,27.78,36.21,16.20,14.60,33.87,32.92,
+    24.97,25.70,27.90,30.00,31.40,29.80,28.50,26.20,35.10,24.80
+  ),
+  famhist = factor(
+    c("Present","Absent","Present","Present","Absent","Present","Absent",
+      "Absent","Present","Present","Absent","Absent","Absent","Present",
+      "Present","Absent","Absent","Absent","Present","Absent")
+  ),
+  typea = c(
+    49,55,52,51,60,62,54,48,52,50,
+    46,58,59,63,61,47,56,45,64,53
+  ),
+  obesity = c(
+    25.30,28.87,29.14,31.99,25.99,29.30,22.50,23.50,30.30,27.50,
+    24.10,26.20,28.40,30.10,29.60,27.80,26.90,25.40,32.20,24.90
+  ),
+  alcohol = c(
+    97.20,2.06,3.81,24.26,57.34,14.14,0.00,0.00,0.00,0.00,
+    6.43,12.20,0.00,5.00,18.40,8.30,10.10,0.00,22.60,1.20
+  ),
+  age = c(
+    52,63,46,58,49,45,38,58,29,53,
+    41,57,52,60,54,48,50,44,59,47
+  ),
+  chd = c(
+    1,1,0,1,0,1,0,1,0,1,
+    0,1,0,1,1,0,0,0,1,0
+  )
+)
+
+
+
+yy <- SAheart$adiposity
+xx <- SAheart$ldl
+
+# OLS 回归系数
+cyx <- coef(lm(yy ~ xx))
+
+# 中位数分割
+md <- median(xx)
+xx1 <- xx[xx <= md]
+xx2 <- xx[xx > md]
+yy1 <- yy[xx <= md]
+yy2 <- yy[xx > md]
+
+md1 <- median(xx1)
+md2 <- median(xx2)
+mw1 <- median(yy1)
+mw2 <- median(yy2)
+
+# 中位数斜率估计
+beta <- (mw2 - mw1) / (md2 - md1)
+alpha <- median(yy - beta * xx)
+
+# 作图
+plot(xx, yy,
+     xlab = "ldl",
+     ylab = "adiposity",
+     main = "Median-based Regression vs OLS")
+
+abline(alpha, beta, lwd = 2)
+abline(cyx, lty = 2)
+
+```
+
+##Theil方法
+```{r}
+yy <- SAheart$adiposity
+xx <- SAheart$ldl
+
+n <- length(xx)
+slopes <- c()
+
+for (j in 2:n) {
+  for (i in 1:(j - 1)) {
+    if (xx[j] != xx[i]) {
+      slopes <- c(slopes, (yy[j] - yy[i]) / (xx[j] - xx[i]))
+    }
+  }
+}
+
+beta <- median(slopes)
+alpha <- median(yy - beta * xx)
+
+beta
+alpha
+
+```
+
+##Brown-Mood检验
+
+```{r}
+# ======================
+# Theil–Sen 估计
+# ======================
+theil_sen <- function(x, y) {
+  n <- length(x)
+  slopes <- c()
+  for (j in 2:n) {
+    for (i in 1:(j - 1)) {
+      if (x[j] != x[i]) {
+        slopes <- c(slopes, (y[j] - y[i]) / (x[j] - x[i]))
+      }
+    }
+  }
+  beta_hat <- median(slopes)
+  alpha_hat <- median(y - beta_hat * x)
+  list(alpha = alpha_hat, beta = beta_hat)
+}
+
+# ======================
+# Brown–Mood 回归检验
+# ======================
+brown_mood_test <- function(x, y, alpha, beta) {
+  n <- length(x)
+  x_med <- median(x)
+
+  # 预测值
+  y_hat <- alpha + beta * x
+
+  # 计数 n1, n2（严格按书）
+  n1 <- sum(x < x_med & y > y_hat)
+  n2 <- sum(x > x_med & y < y_hat)
+
+  # Brown–Mood 统计量
+  BM <- (8 / n) * ((n1 - n / 4)^2 + (n2 - n / 4)^2)
+
+  # p 值（卡方 2 自由度）
+  p_value <- 1 - pchisq(BM, df = 2)
+
+  list(
+    BM = BM,
+    n1 = n1,
+    n2 = n2,
+    p.value = p_value
+  )
+}
+
+# ======================
+# 使用你的数据
+# ======================
+yy <- SAheart$adiposity
+xx <- SAheart$ldl
+
+# Theil–Sen 回归
+fit <- theil_sen(xx, yy)
+
+fit$alpha
+fit$beta
+
+# Brown–Mood 检验
+bm_result <- brown_mood_test(
+  x = xx,
+  y = yy,
+  alpha = fit$alpha,
+  beta = fit$beta
+)
+
+bm_result
+
+```
+
+##Theil检验
+如果和Y-beta0X之间的残差相关性很大则认为beta=beta0的原假设不成立，如果原假设成立Y-beta0X的应该只与X和随机因素有关
+```{r}
+#先得到残差
+reyTH<-yy-beta*xx
+cor.test(reyTh,xx,method="kendall")
+```
+
+#分位回归
+```{r}
+library(quantreg)            # 加载分位回归包
+library(SparseM)             # 加载稀疏矩阵包（用于高效计算）
+
+# 2. 设置图形参数
+par(mfrow=c(1,3))  # 创建1行3列的图形布局
+
+# 3. 加载数据
+data(engel)        # 加载黑格尔数据集
+attach(engel)      # 将数据集变量直接添加到搜索路径
+
+# 4. 创建基础散点图
+plot(income, foodexp,          # x=家庭收入，y=食品支出
+     xlab="Household Income",  # x轴标签
+     ylab="Food Expenditure",  # y轴标签
+     type="n",                 # type="n"表示不画点，只创建坐标系
+     cex=.5)                   # 控制点的大小
+
+# 5. 添加数据点
+points(income, foodexp, cex=.5)  # 在图上添加实际数据点
+
+# 6. 设定分位点序列
+taus = seq(0.1, 0.9, 0.1)  # 创建从0.1到0.9，间隔0.1的分位点序列
+                           # 即：0.1, 0.2, 0.3, ..., 0.9
+
+# 7. 进行分位回归（代码有误，需要修正）
+f = coef(rq(foodexp ~ income, tau=taus))  # 对每个τ进行分位回归
+
+# 8. 绘制分位回归线（代码有误，需要修正）
+
+for(i in 1:length(taus))  # 遍历每个分位点
+{
+    # 在图上添加回归线
+    # f[,i][1]是截距，f[,i][2]是斜率
+    abline(f[,i][1], f[,i][2], lty=2)  # lty=2表示虚线
+}
+```
+
+情况1：数据对称（正态分布）
+    │
+    │        --- τ=0.9  ---
+    │     --- τ=0.8  ---
+    │  --- τ=0.7  ---
+    │  --- τ=0.5（中位数）---
+    │  --- τ=0.3  ---
+    │     --- τ=0.2  ---
+    │        --- τ=0.1  ---
+    ↓
+    各线基本平行，间距均匀
+
+情况2：数据右偏（正偏态）
+    │
+    │                       --- τ=0.9（很稀疏）
+    │                 --- τ=0.8（较稀疏）
+    │           --- τ=0.7（稍稀疏）
+    │     --- τ=0.5  ---
+    │  --- τ=0.3  ---
+    │--- τ=0.2  ---
+    │--- τ=0.1  ---
+    ↓
+    上部分间距宽，下部分间距窄
+    
+情况3：数据左偏（负偏态）← 你课本说的！
+    │
+    │--- τ=0.9  ---
+    │--- τ=0.8  ---
+    │  --- τ=0.7  ---
+    │     --- τ=0.5  ---
+    │           --- τ=0.3  ---
+    │                 --- τ=0.2  ---
+    │                       --- τ=0.1  ---
+    ↓
+    上部分间距窄，下部分间距宽
+    
+由此可以看出数据是否存在偏态
+
+```{r}
+library(quantreg)            # 加载分位回归包
+library(SparseM)             # 加载稀疏矩阵包（用于高效计算）
+
+data(engel)        # 加载黑格尔数据集
+attach(engel)      # 将数据集变量直接添加到搜索路径
+
+f<-rq(foodexp ~ income, tau=0.7) # 对每个τ进行分位回归
+
+summary(f)
+# 需要指定se参数来得到标准误和p值
+summary(f, se = "nid")  # nid、boot、rank、ker等选项
+```
