@@ -1,0 +1,634 @@
+---
+title: "非参数统计第七章调用接口"
+author: "柴王珩 2023201563"
+date: "2025-12-17"
+output: html_document
+---
+
+#绘制直方图代码
+```{r}
+length<-c(1,1,1,2,3,4,4,5,5,6,6,7,7,2,2,2,2,4,4,5,6,7,3)
+par(mfrow=c(1,3))
+#选择不同带宽
+h1<-hist(length,breaks = 0:35*0.75,freq=F,xlab="Bodysize",main = "bandwidth=0.75")
+h2<-hist(length,breaks = 0:7*4,freq=F,xlab="Bodysize",main = "bandwidth=0.75")
+h3<-hist(length,breaks = 0:3*10,freq=F,xlab="Bodysize",main = "bandwidth=0.75")
+```
+
+如果需要调用密度，只需要返回density，这是一个向量，输出的结果是每个bin的高度，也就是$\hat{f}(x)$
+```{r}
+#密度调用
+h1$density
+```
+
+
+#核密度估计
+
+```{r}
+length<-c(1,1,1,2,3,4,4,5,5,6,6,7,7,2,2,2,2,4,4,5,6,7,3)
+plot(density(length, kernel = "gaussian", bw = 1),
+     main = "bandwidth = 1")
+
+plot(density(length, kernel = "gaussian", bw = 2),
+     main = "bandwidth = 2")
+
+plot(density(length, kernel = "gaussian", bw = 8),
+     main = "bandwidth = 8")
+
+#常见核函数名称
+#parzen窗(uniform)
+#三角triangle
+#Epanechikov
+#四次(Quartic)
+#三权(Triweight)
+#高斯(Guass)
+#余弦
+#指数
+```
+
+#核密度估计加调用密度值的语法
+
+```{r}
+x <- c(1,1,1,2,3,4,4,5,5,6,6,7,7,2,2,2,2,4,4,5,6,7,3)
+
+#调用核函数
+d_gauss <- density(x, kernel = "gaussian", bw = 1)
+d_epa   <- density(x, kernel = "epanechnikov", bw = 1)
+d_rect  <- density(x, kernel = "rectangular", bw = 1)
+d_tri   <- density(x, kernel = "triangular", bw = 1)
+d_biw   <- density(x, kernel = "biweight", bw = 1)
+d_cos   <- density(x, kernel = "cosine", bw = 1)
+
+#画图
+plot(d_gauss, lwd = 2)
+lines(d_epa, lwd = 2, lty = 2)
+lines(d_rect, lwd = 2, lty = 3)
+lines(d_tri, lwd = 2, lty = 4)
+lines(d_biw, lwd = 2, lty = 5)
+lines(d_cos, lwd = 2, lty = 6)
+
+```
+先选一个区间
+
+[min⁡𝑋−𝑐ℎ,max𝑋+𝑐ℎ]
+
+[minX−ch,maxX+ch](c=3 默认)
+
+在这个区间上取𝑛=512个等距网格点按照核密度公式计算密度，连成曲线
+
+```{r}
+d_gauss$x   # x 网格
+d_gauss$y   # 在这些点上的密度
+```
+
+#得到点的精确核密度估计值
+```{r}
+#以指数核为例
+exp_kernel <- function(u) 0.5 * exp(-abs(u))
+
+kde_exp <- function(x0, data, h) {
+  mean(exp_kernel((x0 - data)/h)) / h
+}
+
+kde_exp(3.5, x, h = 1)
+
+#以三权核为例
+triweight_kernel <- function(u) {
+  ifelse(abs(u) <= 1, 35/32 * (1 - u^2)^3, 0)
+}
+
+kde_triweight <- function(x0, data, h) {
+  mean(triweight_kernel((x0 - data)/h)) / h
+}
+
+kde_triweight(3.5, x, h = 1)
+
+#parzen窗
+uniform_kernel <- function(u) {
+  ifelse(abs(u) <= 1, 0.5, 0)
+}
+
+kde_uniform <- function(x0, data, h) {
+  mean(uniform_kernel((x0 - data)/h)) / h
+}
+
+kde_uniform(3.5, x, h = 1)
+
+#三角核
+triangular_kernel <- function(u) {
+  ifelse(abs(u) <= 1, 1 - abs(u), 0)
+}
+
+kde_triangular <- function(x0, data, h) {
+  mean(triangular_kernel((x0 - data)/h)) / h
+}
+
+kde_triangular(3.5, x, h = 1)
+
+#Epanechnikov核
+epanechnikov_kernel <- function(u) {
+  ifelse(abs(u) <= 1, 0.75 * (1 - u^2), 0)
+}
+
+kde_epanechnikov <- function(x0, data, h) {
+  mean(epanechnikov_kernel((x0 - data)/h)) / h
+}
+
+kde_epanechnikov(3.5, x, h = 1)
+
+#四次核
+quartic_kernel <- function(u) {
+  ifelse(abs(u) <= 1, 15/16 * (1 - u^2)^2, 0)
+}
+
+kde_quartic <- function(x0, data, h) {
+  mean(quartic_kernel((x0 - data)/h)) / h
+}
+
+kde_quartic(3.5, x, h = 1)
+
+#高斯核
+gaussian_kernel <- function(u) {
+  dnorm(u)
+}
+
+kde_gaussian <- function(x0, data, h) {
+  mean(gaussian_kernel((x0 - data)/h)) / h
+}
+
+kde_gaussian(3.5, x, h = 1)
+
+#余弦和
+cosine_kernel <- function(u) {
+  ifelse(abs(u) <= 1, pi/4 * cos(pi * u / 2), 0)
+}
+
+kde_cosine <- function(x0, data, h) {
+  mean(cosine_kernel((x0 - data)/h)) / h
+}
+
+kde_cosine(3.5, x, h = 1)
+
+
+```
+
+#核密度估计置信区间代码
+```{r}
+# =========================
+# 常见核函数（已归一化）
+# =========================
+
+kernel_list <- list(
+
+  uniform = function(u) {
+    ifelse(abs(u) <= 1, 0.5, 0)
+  },
+
+  triangle = function(u) {
+    ifelse(abs(u) <= 1, 1 - abs(u), 0)
+  },
+
+  epanechnikov = function(u) {
+    ifelse(abs(u) <= 1, 3/4 * (1 - u^2), 0)
+  },
+
+  quartic = function(u) {
+    ifelse(abs(u) <= 1, 15/16 * (1 - u^2)^2, 0)
+  },
+
+  triweight = function(u) {
+    ifelse(abs(u) <= 1, 35/32 * (1 - u^2)^3, 0)
+  },
+
+  gaussian = function(u) {
+    dnorm(u)
+  },
+
+  cosine = function(u) {
+    ifelse(abs(u) <= 1, pi/4 * cos(pi * u / 2), 0)
+  },
+
+  exponential = function(u) {
+    0.5 * exp(-abs(u))
+  }
+)
+
+kde_general <- function(x0, data, h, kernel) {
+  mean(kernel((x0 - data) / h)) / h
+}
+
+kde_bootstrap_band <- function(
+  data,
+  kernel = c("gaussian", "epanechnikov", "triweight",
+             "quartic", "triangle", "uniform",
+             "cosine", "exponential"),
+  h,
+  grid_length = 512,
+  B = 500,
+  alpha = 0.05,
+  seed = NULL
+) {
+
+  if (!is.null(seed)) set.seed(seed)
+
+  kernel_name <- match.arg(kernel)
+  K <- kernel_list[[kernel_name]]
+
+  n <- length(data)
+
+  # =========================
+  # 网格
+  # =========================
+  grid <- seq(min(data) - 3*h,
+              max(data) + 3*h,
+              length.out = grid_length)
+
+  # =========================
+  # 原始 KDE
+  # =========================
+  p_hat <- sapply(grid, kde_general,
+                  data = data, h = h, kernel = K)
+
+  # =========================
+  # Bootstrap
+  # =========================
+  R_vals <- numeric(B)
+
+  for (b in 1:B) {
+    data_star <- sample(data, replace = TRUE)
+
+    p_hat_star <- sapply(grid, kde_general,
+                         data = data_star, h = h, kernel = K)
+
+    R_vals[b] <- sqrt(n * h) * max(abs(p_hat - p_hat_star))
+  }
+
+  # =========================
+  # 分位数
+  # =========================
+  z_alpha <- quantile(R_vals, probs = 1 - alpha)
+
+  # =========================
+  # 置信带
+  # =========================
+  lower <- p_hat - z_alpha / sqrt(n * h)
+  upper <- p_hat + z_alpha / sqrt(n * h)
+
+  # =========================
+  # 输出
+  # =========================
+  list(
+    grid = grid,
+    density = p_hat,
+    lower = lower,
+    upper = upper,
+    z_alpha = z_alpha,
+    kernel = kernel_name,
+    h = h,
+    alpha = alpha
+  )
+}
+
+```
+
+调用示例
+```{r}
+set.seed(123)
+x <- rnorm(200)
+
+res <- kde_bootstrap_band(
+  data = x,
+  kernel = "gaussian",
+  h = 0.4,
+  B = 300,
+  seed = 1
+)
+
+```
+
+#多维核密度估计
+```{r}
+library("ks")
+data("faithful")
+H<-Hpi(x=faithful)#计算最优带宽矩阵
+#plot(): 通用绘图函数（这里针对kde对象有特殊方法）
+#默认核函数是高斯核
+fhat<-kde(x=faithful,H=H)
+plot(fhat,display="filled.contour2")#display = "filled.contour2": 指定绘图类型为填充等高线图
+points(faithful,cex=0.5,pch=16)
+```
+
+#多维核密度函数调用
+```{r}
+# ===============================
+# 多维核函数
+# ===============================
+
+# 1. n维高斯核
+gaussian_kernel_nd <- function(x) {
+  d <- length(x)
+  (2 * pi)^(-d/2) * exp(-0.5 * sum(x^2))
+}
+
+# 2. n维球形核 K(x) = 3/pi * (1 - x^T x) * I(x^T x < 1)
+sphere_kernel <- function(x) {
+  r2 <- sum(x^2)
+  if (r2 < 1) return(3/pi * (1 - r2)) else return(0)
+}
+
+# 3. n维球形核 K(x) = 4/pi * (1 - x^T x)^3 * I(x^T x < 1)
+sphere_kernel3 <- function(x) {
+  r2 <- sum(x^2)
+  if (r2 < 1) return(4/pi * (1 - r2)^3) else return(0)
+}
+
+# 4. 多维Epanechnikov核 K_e(x) = 1/2 c_d^{-1} (d+2) (1 - x^T x) I(x^T x < 1)
+epanechnikov_kernel <- function(x) {
+  d <- length(x)
+  c_d <- pi^(d/2) / gamma(d/2 + 1)  # 单位球体体积
+  r2 <- sum(x^2)
+  if (r2 < 1) return(0.5 * (d + 2) / c_d * (1 - r2)) else return(0)
+}
+
+# ===============================
+# 多维KDE函数
+# ===============================
+kde_nd <- function(x0, data, h, kernel = "gaussian") {
+  # x0: 目标点向量
+  # data: n x d 矩阵，每行是一个样本
+  # h: 带宽向量或标量
+  # kernel: "gaussian", "sphere", "sphere3", "epanechnikov"
+  
+  n <- nrow(data)
+  d <- ncol(data)
+  
+  if (length(h) == 1) h <- rep(h, d)  # 如果是标量带宽，扩展为向量
+  if (length(h) != d) stop("带宽向量长度必须等于维度数")
+  
+  # 选择核函数
+  ker_fun <- switch(kernel,
+                    gaussian = gaussian_kernel_nd,
+                    sphere = sphere_kernel,
+                    sphere3 = sphere_kernel3,
+                    epanechnikov = epanechnikov_kernel,
+                    stop("未知核函数"))
+  
+  # 计算KDE
+  kde_vals <- numeric(n)
+  for (i in 1:n) {
+    u <- (x0 - data[i, ]) / h
+    kde_vals[i] <- ker_fun(u)
+  }
+  
+  # 多维带宽归一化
+  prod_h <- prod(h)
+  mean(kde_vals) / prod_h
+}
+
+# ===============================
+# 示例使用(输入是一个矩阵)
+# ===============================
+set.seed(1)
+x <- matrix(rnorm(50*2), ncol = 2)  # 50个二维样本
+x0 <- c(0.5, -0.2)
+h <- c(0.8, 0.8)
+
+kde_nd(x0, x, h, kernel = "gaussian")
+kde_nd(x0, x, h, kernel = "epanechnikov")
+kde_nd(x0, x, h, kernel = "sphere")
+kde_nd(x0, x, h, kernel = "sphere3")
+
+```
+
+#贝叶斯分类决策和非参数核密度估计
+```{r}
+#类别i 从1到n
+#每一个类别有一个向量
+#根据向量得到属于每个类别的频率得到先验密度p(θi)
+#使用核密度估计得到在该类别下的条件密度函数P(x|θi)
+#计算p(x|θi)p(θi)
+#θ^*=argmax{p(x|θi)p(θi}
+
+# ===============================
+# 一维高斯核
+# ===============================
+gaussian_kernel <- function(u) {
+  dnorm(u)
+}
+
+# ===============================
+# 多维高斯KDE
+# ===============================
+kde_gaussian_nd <- function(x0, data, h) {
+  # x0: 目标点向量 (1xd)
+  # data: n x d 矩阵，每行一个样本
+  # h: 带宽向量或标量
+  n <- nrow(data)
+  d <- ncol(data)
+  
+  if (length(h) == 1) h <- rep(h, d)
+  if (length(h) != d) stop("带宽向量长度必须等于维度数")
+  
+  kde_vals <- numeric(n)
+  for (i in 1:n) {
+    u <- (x0 - data[i, ]) / h
+    kde_vals[i] <- prod(gaussian_kernel(u))  # 高斯核多维独立假设
+  }
+  
+  mean(kde_vals) / prod(h)
+}
+
+# ===============================
+# 贝叶斯分类器（非参数KDE）
+# ===============================
+bayes_kde_classifier <- function(x_new, data_list, h) {
+  # x_new: 待分类样本 (向量)
+  # data_list: list，每个元素是一个类别的样本矩阵
+  # h: 带宽标量或向量
+  n_class <- length(data_list)
+  
+  post_vals <- numeric(n_class)
+  
+  for (i in 1:n_class) {
+    data_i <- data_list[[i]]
+    prior_i <- nrow(data_i) / sum(sapply(data_list, nrow))  # 先验p(theta_i)
+    cond_density <- kde_gaussian_nd(x_new, data_i, h)        # p(x|theta_i)
+    post_vals[i] <- cond_density * prior_i                  # 后验值 p(x|theta_i)p(theta_i)
+  }
+  
+  # 分类结果
+  class_hat <- which.max(post_vals)
+  return(list(class = class_hat, posterior = post_vals))
+}
+
+# ===============================
+# 示例使用
+# ===============================
+set.seed(123)
+# 构造两个类别样本
+class1 <- matrix(rnorm(20*2, mean = 0), ncol = 2)
+class2 <- matrix(rnorm(20*2, mean = 3), ncol = 2)
+
+data_list <- list(class1, class2)
+
+# 待分类点
+x_new <- c(1, 0.5)
+h <- c(1, 1)
+
+result <- bayes_kde_classifier(x_new, data_list, h)
+print(result)
+
+```
+
+批量输入数据自动选最优带宽版本
+```{r}
+# ===============================
+# 一维高斯核
+# ===============================
+gaussian_kernel <- function(u) {
+  dnorm(u)
+}
+
+# ===============================
+# 多维高斯KDE
+# ===============================
+kde_gaussian_nd <- function(x0, data, h) {
+  # x0: 待估计点，1xd 向量
+  # data: n x d 样本矩阵
+  # h: 带宽向量或标量
+  n <- nrow(data)
+  d <- ncol(data)
+  
+  if (length(h) == 1) h <- rep(h, d)
+  if (length(h) != d) stop("带宽向量长度必须等于维度数")
+  
+  # 高斯核乘积公式
+  kde_vals <- apply(data, 1, function(row) {
+    prod(gaussian_kernel((x0 - row) / h))
+  })
+  
+  mean(kde_vals) / prod(h)
+}
+
+# ===============================
+# 自动带宽选择（Silverman规则扩展到多维）
+# ===============================
+auto_bandwidth <- function(data) {
+  d <- ncol(data)
+  h <- numeric(d)
+  for (j in 1:d) {
+    # Silverman rule: 1.06*sd*n^(-1/5)
+    h[j] <- 1.06 * sd(data[,j]) * nrow(data)^(-1/5)
+  }
+  return(h)
+}
+
+# ===============================
+# 批量贝叶斯KDE分类器
+# ===============================
+bayes_kde_classifier_batch <- function(X_new, data_list, h_list = NULL) {
+  # X_new: 待分类样本矩阵，每行一个样本
+  # data_list: list，每个元素是类别样本矩阵
+  # h_list: list，每个类别的带宽向量，如果为NULL自动选择
+  
+  n_class <- length(data_list)
+  n_new <- nrow(X_new)
+  
+  # 自动选择带宽
+  if (is.null(h_list)) {
+    h_list <- lapply(data_list, auto_bandwidth)
+  }
+  
+  # 保存分类结果和后验概率
+  class_hat <- integer(n_new)
+  posterior_list <- vector("list", n_new)
+  
+  for (i in 1:n_new) {
+    x0 <- X_new[i, ]
+    post_vals <- numeric(n_class)
+    
+    for (c in 1:n_class) {
+      data_c <- data_list[[c]]
+      prior_c <- nrow(data_c) / sum(sapply(data_list, nrow))
+      cond_density <- kde_gaussian_nd(x0, data_c, h_list[[c]])
+      post_vals[c] <- cond_density * prior_c
+    }
+    
+    class_hat[i] <- which.max(post_vals)
+    posterior_list[[i]] <- post_vals
+  }
+  
+  return(list(class = class_hat, posterior = posterior_list))
+}
+
+# ===============================
+# 示例使用
+# ===============================
+set.seed(123)
+# 构造两个类别样本
+class1 <- matrix(rnorm(20*2, mean = 0), ncol = 2)
+class2 <- matrix(rnorm(20*2, mean = 3), ncol = 2)
+data_list <- list(class1, class2)
+
+# 批量待分类点
+X_new <- matrix(c(1,0.5, 2,2, 0,1), ncol = 2, byrow = TRUE)
+
+# 调用批量分类器
+result <- bayes_kde_classifier_batch(X_new, data_list)
+print(result$class)      # 分类结果
+print(result$posterior)  # 每个样本的后验概率
+
+```
+
+#k近邻估计(获取密度)
+```{r}
+library("FNN")
+
+knn_density <- function(x0, data, k) {
+  n <- nrow(data)
+  d <- ncol(data)
+  
+  # 找 x0 到数据集中 k 个最近邻的距离
+  knn_dist <- get.knnx(data, t(as.matrix(x0)), k)$nn.dist
+  
+  R_k <- knn_dist[k]  # 第 k 个最近邻距离
+  
+  # 单位球体体积
+  V_d <- pi^(d/2) / gamma(d/2 + 1)
+  
+  density_est <- k / (n * V_d * R_k^d)
+  return(density_est)
+}
+
+# ===============================
+# 示例使用
+# ===============================
+set.seed(1)
+data <- matrix(rnorm(50*2), ncol=2)  # 50个二维样本
+x0 <- c(0,0)
+k <- 5
+
+knn_density(x0, data, k)
+
+```
+
+#k近邻分类
+```{r}
+library(class)
+
+# 构造示例数据
+set.seed(1)
+#rnorm(20*2,0), ncol=2 生成40个随机数排成两列 相当于协方差为0均值为0的联合正态分布
+train <- rbind(matrix(rnorm(20*2,0), ncol=2), matrix(rnorm(20*2,3), ncol=2))
+train_labels <- c(rep(1,20), rep(2,20))
+
+test <- matrix(c(1,0.5, 2,2), ncol=2, byrow=TRUE)
+
+# kNN 分类
+pred <- knn(train=train, test=test, cl=train_labels, k=5)
+pred
+```
+
+kNN 分类的核心思想：
+
+对于一个待分类的样本 𝑥，找训练集中距离 x 最近的 k 个点，然后让这个点的类别“投票”，选票最多的类别就是 x 的预测类别。
