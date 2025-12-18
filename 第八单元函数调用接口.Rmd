@@ -1,0 +1,396 @@
+---
+title: "非参数统计第八章接口"
+author: "柴王珩 2023201563"
+date: "2025-12-18"
+output: html_document
+---
+
+82500167
+#Nadaraya-Waston核回归
+设定核函数K，带宽h_n>0
+定义加权平均核
+$$
+w_i(x)=\frac{K_{h_n}(X_i-x)}{\sum_{j=1}^nK_{h_n}(X_j-x)}
+$$
+核回归定义为
+$$
+\hat{m}_n(x)=\sum_{i=1}^nw_i(x)Y_i
+$$
+注意到
+$$
+\hat{\theta}=min\sum_{i=1}^nw_i(x)(Y_i-\theta)^2
+$$
+核函数列表
+```{r}
+kernel_list <- list(
+
+  uniform = function(u) {
+    ifelse(abs(u) <= 1, 0.5, 0)
+  },
+
+  triangle = function(u) {
+    ifelse(abs(u) <= 1, 1 - abs(u), 0)
+  },
+
+  epanechnikov = function(u) {
+    ifelse(abs(u) <= 1, 3/4 * (1 - u^2), 0)
+  },
+
+  quartic = function(u) {
+    ifelse(abs(u) <= 1, 15/16 * (1 - u^2)^2, 0)
+  },
+
+  triweight = function(u) {
+    ifelse(abs(u) <= 1, 35/32 * (1 - u^2)^3, 0)
+  },
+
+  gaussian = function(u) {
+    dnorm(u)
+  },
+
+  cosine = function(u) {
+    ifelse(abs(u) <= 1, pi/4 * cos(pi * u / 2), 0)
+  },
+
+  exponential = function(u) {
+    0.5 * exp(-abs(u))
+  }
+)
+
+kde_general <- function(x0, data, h, kernel) {
+  mean(kernel((x0 - data) / h)) / h
+}
+```
+
+
+```{r}
+nw_regression_point <- function(x, X, Y, h, kernel) {
+  # 核权重（未归一化）
+  K_vals <- kernel((X - x) / h) / h
+  
+  # 防止分母为 0
+  if (sum(K_vals) == 0) {
+    return(NA)
+  }
+  
+  # 归一化权重
+  w <- K_vals / sum(K_vals)
+  
+  # 核回归估计
+  sum(w * Y)
+}
+
+nw_regression <- function(x_grid, X, Y, h, kernel) {
+  sapply(x_grid, function(x) {
+    nw_regression_point(x, X, Y, h, kernel)
+  })
+}
+
+set.seed(123)
+
+n <- 100
+X <- sort(runif(n, 0, 1))
+Y <- sin(2 * pi * X) + rnorm(n, sd = 0.2)
+
+x_grid <- seq(0, 1, length.out = 200)
+
+m_hat <- nw_regression(
+  x_grid,
+  X,
+  Y,
+  h = 0.08,
+  kernel = kernel_list$gaussian
+)
+
+plot(X, Y, pch = 16, col = "gray")
+lines(x_grid, m_hat, col = "red", lwd = 2)
+
+```
+
+
+
+#Gauss-Muller核回归
+
+$$
+s_i=\frac{x_i+x_{i+1}{2}
+$$
+$$
+\hat{m}(x)=\sum_{i=1}^n\int_{s_{i-1}}^{s_i}K(\frac{u-x}{h})du y_i
+$$
+
+```{r}
+#单点Gauss-Muller核回归
+gm_regression_point <- function(x, X, Y, h, kernel) {
+  n <- length(X)
+  
+  # 构造 s_i
+  s <- numeric(n + 1)
+  s[2:n] <- (X[1:(n - 1)] + X[2:n]) / 2
+  
+  # 边界处理
+  s[1] <- X[1] - (X[2] - X[1]) / 2
+  s[n + 1] <- X[n] + (X[n] - X[n - 1]) / 2
+  
+  weights <- numeric(n)
+  
+  for (i in 1:n) {
+    integrand <- function(u) {
+      kernel((u - x) / h)
+    }
+    
+    weights[i] <- integrate(
+      integrand,
+      lower = s[i],
+      upper = s[i + 1]
+    )$value
+  }
+  
+  sum(weights * Y)
+}
+
+#向量化版本，可以输入多个x
+gm_regression <- function(x_grid, X, Y, h, kernel) {
+  sapply(x_grid, function(x) {
+    gm_regression_point(x, X, Y, h, kernel)
+  })
+}
+
+set.seed(123)
+
+n <- 100
+X <- sort(runif(n, 0, 1))
+Y <- sin(2 * pi * X) + rnorm(n, sd = 0.2)
+
+x_grid <- seq(0, 1, length.out = 200)
+
+m_hat_gm <- gm_regression(
+  x_grid,
+  X,
+  Y,
+  h = 0.08,
+  kernel = kernel_list$gaussian
+)
+
+plot(X, Y, pch = 16, col = "gray",
+     xlab = "x", ylab = "y",
+     main = "Nadaraya–Watson vs Gauss–Muller")
+
+lines(x_grid, m_hat, col = "red", lwd = 2)
+lines(x_grid, m_hat_gm, col = "blue", lwd = 2)
+
+legend("topright",
+       legend = c("NW", "Gauss–Muller"),
+       col = c("red", "blue"),
+       lwd = 2)
+
+
+
+```
+
+#局部多项式回归
+
+$$
+\sum_{i=1}^n\{Y_i-a(x)-b(x)X_i\}^2K_{h_n}(X_i-x)
+$$
+
+$$
+\hat{m}(x)=\hat{a}(x)+\hat{b}(x)X_i
+$$
+
+$$
+\sum w_i(x)Y_i
+$$
+
+```{r}
+local_linear_point <- function(x, X, Y, h, kernel) {
+  u <- (X - x) / h
+  K <- kernel(u) / h
+  
+  S0 <- sum(K)
+  S1 <- sum(K * (X - x))
+  S2 <- sum(K * (X - x)^2)
+  
+  T0 <- sum(K * Y)
+  T1 <- sum(K * (X - x) * Y)
+  
+  # 截距 = m(x) 的估计
+  (S2 * T0 - S1 * T1) / (S0 * S2 - S1^2)
+}
+
+local_linear <- function(x_grid, X, Y, h, kernel) {
+  sapply(x_grid, function(x) {
+    local_linear_point(x, X, Y, h, kernel)
+  })
+}
+
+set.seed(123)
+
+n <- 100
+X <- sort(runif(n, 0, 1))
+Y <- sin(2 * pi * X) + rnorm(n, sd = 0.2)
+
+x_grid <- seq(0, 1, length.out = 200)
+
+m_ll <- local_linear(
+  x_grid,
+  X,
+  Y,
+  h = 0.08,
+  kernel = kernel_list$gaussian
+)
+
+plot(X, Y, pch = 16, col = "gray")
+lines(x_grid, m_ll, col = "blue", lwd = 2)
+
+```
+调包版本
+```{r}
+library(np)
+
+fit_ll <- npreg(
+  Y ~ X,
+  regtype = "ll",   # local linear
+  bw = 0.08
+)
+
+m_hat_ll <- predict(
+  fit_ll,
+  newdata = data.frame(X = x_grid)
+)
+
+set.seed(123)
+
+n <- 100
+X <- sort(runif(n, 0, 1))
+Y <- sin(2 * pi * X) + rnorm(n, sd = 0.2)
+
+x_grid <- seq(0, 1, length.out = 200)
+
+plot(X, Y, pch = 16, col = "gray")
+lines(x_grid, m_ll, col = "blue", lwd = 2)
+
+```
+
+拓展到局部多项式回归
+
+#LOWESS稳健回归
+
+对模型进行局部线性回归，得到m(X_i)的估计$\hat{m}(X_i)$，得到残差$r_i=Y_i-\hat{m}(X_i)$
+
+计算稳健权数$\delta_i=B(ri/6\cdot median(|r_1|,|r_2|,...,|r_n) $，其中$B(t)=(1-|t|^2)^2I_{[-1,1]}(t)$,I为指示函数
+
+使用权$\delta_iK(h_n^{-1}(X_i-x))$对模型进行局部加权最小二乘估计，就可得到新的r_i
+
+重复第二步第三步s次后就可得到LOWESS稳健回归
+```{r}
+bisquare_weight <- function(t) {
+  w <- (1 - t^2)^2
+  w[abs(t) > 1] <- 0
+  w
+}
+
+robust_local_linear_point <- function(
+  x, X, Y, h, kernel, delta
+) {
+  u <- (X - x) / h
+  K <- kernel(u) / h
+  
+  # 总权重 = 稳健权 × 核权
+  W <- delta * K
+  
+  S0 <- sum(W)
+  S1 <- sum(W * (X - x))
+  S2 <- sum(W * (X - x)^2)
+  
+  T0 <- sum(W * Y)
+  T1 <- sum(W * (X - x) * Y)
+  
+  (S2 * T0 - S1 * T1) / (S0 * S2 - S1^2)
+}
+
+robust_lowess <- function(
+  X, Y,
+  x_grid,
+  h,
+  kernel,
+  s = 3
+) {
+  n <- length(X)
+  
+  # Step 0: 初始局部线性回归
+  m_hat <- sapply(X, function(xi) {
+    local_linear_point(xi, X, Y, h, kernel)
+  })
+  
+  r <- Y - m_hat
+  
+  for (iter in 1:s) {
+    # Step 1: 计算稳健权
+    scale <- 6 * median(abs(r))
+    delta <- bisquare_weight(r / scale)
+    
+    # Step 2: 更新回归函数（在 X_i 上）
+    m_hat <- sapply(X, function(xi) {
+      robust_local_linear_point(
+        xi, X, Y, h, kernel, delta
+      )
+    })
+    
+    r <- Y - m_hat
+  }
+  
+  # 返回在 grid 上的估计
+  m_grid <- sapply(x_grid, function(x) {
+    robust_local_linear_point(
+      x, X, Y, h, kernel, delta
+    )
+  })
+  
+  list(
+    fitted = m_hat,
+    residuals = r,
+    m_grid = m_grid
+  )
+}
+
+set.seed(123)
+
+n <- 100
+X <- sort(runif(n))
+Y <- sin(2 * pi * X) + rnorm(n, 0, 0.2)
+
+# 加几个离群点
+Y[c(10, 30, 70)] <- Y[c(10, 30, 70)] + c(3, -3, 2)
+
+x_grid <- seq(0, 1, length.out = 200)
+
+fit_robust <- robust_lowess(
+  X, Y,
+  x_grid,
+  h = 0.08,
+  kernel = kernel_list$gaussian,
+  s = 3
+)
+
+plot(X, Y, pch = 16, col = "gray")
+lines(x_grid, fit_robust$m_grid, col = "blue", lwd = 2)
+
+
+```
+
+#现有的包
+默认迭代4次
+```{r}
+fit_loess <- loess(
+  Y ~ X,
+  span = 0.2,
+  degree = 1,           # 局部线性
+  family = "symmetric"  # 启用稳健权
+)
+
+m_hat_loess <- predict(fit_loess, newdata = data.frame(X = x_grid))
+
+plot(X, Y, pch = 16, col = "gray")
+lines(x_grid, m_hat_loess, col = "green", lwd = 2)
+
+```
