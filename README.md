@@ -1,3 +1,3 @@
 # -
  
-these are markdown files for Nonparametric statistic written by WangXing,includes all methods in chapter 1 to chapter 7,there are detailed annotations which illustrates how to use the codes in these files
+这是王星所著非参数统计chapter1~8的所有统计量的R markdown实现，可做课程学习和统计量实现参考
